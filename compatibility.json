@@ -33,5 +33,54 @@
   "benchmark_weight_sha256": {
     "diffusion_model": "4262e4e9963c553fa00016bbe83961407a4fc0a888be95fd836c8d4f2304e48b",
     "vsa_gate": "bf95408e335c4b0d6a1a44946a428a3e12849e6eab2de9566ecedae4a0043420"
+  },
+  "comfyui_0_36_validation": {
+    "tested_on": "2026-09-20",
+    "gpu": "RTX 4070 12GB",
+    "os": "Windows 11",
+    "comfyui_version": "0.36.0",
+    "comfyui_commit": "7a0b5eede3f9721c8faab290689893f36edc6d66",
+    "python": "3.13.13",
+    "packages": {
+      "torch": "2.14.0+cu130",
+      "comfy-kitchen": "0.2.34",
+      "comfy-aimdo": "0.5.5",
+      "safetensors": "0.8.0"
+    },
+    "file_sha256": {
+      "ComfyUI/comfy/ops.py": "096ddafbc57fb65e383f5986ab3103607f08b4ae76741899da0368d6d4e143d3",
+      "ComfyUI/comfy/quant_ops.py": "bdae24289128e12b928a6d12dccc0a63b61c682cf6544809dd3e470fc3537f40",
+      "ComfyUI/comfy/model_patcher.py": "533e6b6f04a01b60a20b2759e5801d2526b92aa357d1e7d4691a2544a7bf6f51",
+      "ComfyUI/comfy_extras/nodes_sparse_attention.py": "de202f2b5eb753a5748e1c6452cdc10cdf28834ffd8f8bb6acfaf6f643de9692",
+      "comfy_kitchen/tensor/convrot_w4a4.py": "4f207fef362079d4246212f4b5f6561590a2a40e9bfc740c90301fdb67bc6aeb",
+      "comfy_kitchen/backends/cuda/__init__.py": "a3f24f0c4ba46b9be9c68ac0ff54a8b8e5a5dac39741c6606b0fbc41ee319b06"
+    },
+    "custom_nodes": {
+      "ComfyUI-KJNodes": {
+        "commit": "d3cfe21625e5170126ce06fbfcfe1d88108688c3"
+      },
+      "ComfyUI-MiniMax-H3-MotionCache-FastVAE": {
+        "commit": "b719329e0ecf35f0ae08d241c363ed1e56adbb95"
+      }
+    },
+    "native_int4_smoke": "pass",
+    "existing_cache_sha256": "pass",
+    "generation": {
+      "width": 1024,
+      "height": 1792,
+      "frames": 124,
+      "fps": 24,
+      "steps": 4,
+      "seed": 43,
+      "generation_seconds": 209.233,
+      "sampled_peak_vram_mib": 11479,
+      "os_peak_working_set_mib": 11610.7,
+      "memory_sampling_seconds": 60,
+      "audio": true,
+      "full_decode": true,
+      "runs": 1,
+      "interruptions": 0,
+      "cache": "reused after full SHA-256 verification"
+    }
   }
 }

@@ -8,6 +8,31 @@ RTX 4070 12GBでMiniMax H3 Ref2VAを高速化する、FC1 W4A4 + Streaming VSA�
 **FC1 Plain ConvRot W4A4、事前保存したINT8 Gate、固定padding判定キャッシュ**を組み合わせます。
 重み変換は導入時に一度だけ行い、生成時はCPUからロードしてComfyUIのDynamic VRAM / offloadを利用します。
 
+**Windowsでは `setup.bat` で簡単に導入できます。ComfyUI v0.36.0で導入・実生成を確認済みです。** 対応ComfyUIと必要モデルを準備すれば、Python選択・互換性検査・ノード配置・事前変換をまとめて実行できます。モデルの自動ダウンロードは行いません。
+
+### 導入前に知っておきたいこと
+
+| 項目 | 要点 |
+|---|---|
+| SSD追加容量 | 変換キャッシュ **約5.79 GB（5.39 GiB）**。元モデル・Text Encoder・VAE・出力動画などは別途必要です。 |
+| 既存キャッシュの再利用 | `-CacheSource` を指定。同一ボリュームのハードリンクならキャッシュ分の追加消費はほぼありません。別ボリュームではコピーします。 |
+| 本リポジトリが追加するノード | **2個**：`H3V2PreconvertedLoader` と `H3V2StreamingVSAPatch`。 |
+| 外部ノードの依存 | KJNodesとMotionCache-FastVAEの**2パッケージ**。未導入なら `-InstallDependencies` で不足分を追加できます。各パッケージには本ワークフロー以外のノードも含まれます。 |
+
+### ComfyUI v0.36.0での実測結果
+
+2026-09-20、Windows 11 / RTX 4070 12GBで1回実行。1024×1792、124フレーム、24fps、4 steps、seed 43、res_multistep/simple、Sigma Shift 12/3、ChunkFFN 4、VSA keep 5%、FastVAE batch 2です。
+
+| 指標 | 実測結果 |
+|---|---:|
+| 生成時間（モデル読み込み込み） | **209.233秒（約3分29秒）** |
+| GPU使用量の最大観測値 | **11,479 MiB** |
+| プロセスRAMピーク（Windows Peak Working Set） | **11,610.7 MiB** |
+| 出力検証 | 音声あり、124フレーム、24fps、FFmpeg全デコード成功 |
+| 中断・再実行 | なし |
+
+GPU使用量は60秒間隔と完了時の標本で、瞬間ピークではありません。単発の互換性確認であり、他方式との速度比較や画質評価ではありません。既存キャッシュを全SHA-256照合して再利用したため、この確認では新規50層変換・依存ノード新規インストールは実施していません。詳細は [VALIDATION.md](VALIDATION.md) を参照してください。
+
 このディレクトリの内容を、そのままGitHubリポジトリのルートとして配布できます。
 別の評価フォルダや旧リリースへの参照、実験・失敗案・profiling用コードは実行に必要ありません。
 モデル、変換済み重み、参照画像、出力動画は同梱しません。
@@ -24,7 +49,9 @@ FC2はINT8のままです。QKV、Attention kernel、GateのINT8計算式、Chun
 
 ## 必要な環境
 
-検証環境: Windows 11、RTX 4070 12GB、Python 3.13.14、PyTorch 2.13.0+cu130、comfy-kitchen 0.2.33、comfy-aimdo 0.5.2。
+2026-09-20: **ComfyUI 0.36.0、Python 3.13.13、PyTorch 2.14.0+cu130、comfy-kitchen 0.2.34、comfy-aimdo 0.5.5** でセットアップと1024×1792の実生成を確認しました。RTX 4070 12GBでモデル読込を含め209.233秒（単発）。詳細は [VALIDATION.md](VALIDATION.md) を参照してください。
+
+初回検証環境: Windows 11、RTX 4070 12GB、Python 3.13.14、PyTorch 2.13.0+cu130、comfy-kitchen 0.2.33、comfy-aimdo 0.5.2。
 ComfyUI検証commitは `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`。
 詳細なファイル指紋は [compatibility.json](compatibility.json) に記録します。
 同じversion表示だけではGPU向けバイナリの互換性を保証できないため、後述の `--check` を実行してください。
@@ -38,8 +65,25 @@ ComfyUI検証commitは `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`。
 - [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE): `MiniMaxH3FastVAEDecode`。
 - `torch` / `safetensors` はComfyUIと同じPython環境のものを使用します。
 
-この配布物にはインストーラ、pip実行、自動アップデート、モデルダウンロード機能はありません。
-不足するAPIをこのノードが勝手に追加することもありません。既存環境を保全したい場合は、対応済みの別ComfyUI環境へ配置してください。
+Windows用の `setup.bat` を同梱しています。既存ComfyUIの専用Pythonで検査・導入・一度だけの変換を行います。ComfyUI本体・PyTorch・comfy-kitchenの自動更新やモデルダウンロードは行いません。不足APIがある場合は停止します。
+
+### Windows簡単セットアップ
+
+ComfyUIでの生成を終了してから、リポジトリを取得・展開し、`setup.bat` を実行してください。`custom_nodes` 内へ配置済みならComfyUIを自動検出し、それ以外ではComfyUIフォルダを入力します。コマンドラインからは次のように指定できます。
+
+```bat
+setup.bat -ComfyRoot "C:\ComfyUI_windows_portable\ComfyUI"
+```
+
+- portableの `python_embeded\python.exe` またはComfyUI内／親フォルダの `.venv\Scripts\python.exe`、ComfyUI内の `venv\Scripts\python.exe` を探します。複数候補がある場合は `-Python "...\python.exe"` で指定してください。グローバルPythonは拒否します。
+- ComfyUIの `models` と `extra_model_paths.yaml` から既存モデルを探索します。元DiffusionモデルとGateは `-Model "...safetensors" -Gate "...safetensors"` でも指定できます。Text encoder・VAEは先にComfyUIで使える状態にしてください。
+- 外部ノード不足時は、`-InstallDependencies` を付けるとKJNodes / MotionCache-FastVAEの不足分だけを取得し、そのrequirementsを専用Pythonへインストールします。既存ノードは更新しません。通常のセットアップはpipを実行しません。
+- 対応API・ネイティブINT4・CPUオフロード／再ロードを確認してから、FC1とGateを `ComfyUI\models\h3_preconverted\fc1_gate` に事前変換します。元Diffusionモデルも生成時に必要です。
+- 既存の本プロジェクト形式のキャッシュは `-CacheSource "...\cache"` で指定できます。元モデル・Gateと全shardのSHA-256を照合し、同一ボリュームではハードリンク、それ以外ではコピーします。ハードリンク元／先の重みを直接編集しないでください。
+- `-CheckOnly` はGPU検査とモデル／既存キャッシュの検証だけを行い、ファイルを作成しません。キャッシュがない場合はその旨を表示します。不完全・不一致の既存キャッシュは上書きせず停止します。
+- 別の場所から再導入するときにインストール済みコードが異なる場合は停止します。差分を確認後に `-Update` を指定すると、このリポジトリの配布ファイルだけを置き換えます。
+
+完了後にComfyUIを再起動し、付属GUIワークフローの参照画像を自分の画像へ変更してください。モデルをサブフォルダに置いている場合は各loaderでも選択してください。
 
 ## モデル
 
@@ -58,6 +102,8 @@ BF16/FP16元モデルは不要です。変換ツールは上記INT8 ConvRotの50
 追加のTurbo/FastH3 LoRAは付属workflowでは使用しません。
 
 ## 導入と一度だけの変換
+
+通常は上記の **`setup.bat` を使うだけ**で検査と変換を行えます。以下は手動で実行したい場合の手順です。
 
 1. このリポジトリ全体を `ComfyUI/custom_nodes/ComfyUI-MiniMax-H3-W4A4-VSA/` に配置します。
 2. 上記モデルと外部ノードを利用可能にします。起動中の生成と変換がGPUを競合しないよう、生成の終了後に変換してください。
@@ -93,6 +139,18 @@ venv環境では `$h3Python` をそのvenvのPythonへ置換します。Linuxは
 既存出力先の上書き・削除はしません。途中で失敗した場合、未完了ディレクトリを残して停止します。原因を直し、別の新しい出力先で実行してください。
 
 ## Workflowを実行
+
+### スパース率を変更するには
+
+**「H3 v2 Streaming VSA (Preconverted Gate)」ノードの `keep_percent`** を変更します。指定値は削減率ではなく、疎なattentionで保持する割合です。
+
+| `keep_percent` | 保持率 | 対象領域の概算削減率 |
+|---:|---:|---:|
+| 5（初期値） | 5% | 95% |
+| 10 | 10% | 90% |
+| 20 | 20% | 80% |
+
+小さいほど疎になります。設定範囲は0.1〜100です。テキスト・参照などのprefix保護領域は別扱いなので、表の割合はモデル全体の計算量削減率ではありません。**変更時の重み再変換は不要**です。値を変更して再度生成してください。
 
 - **GUI:** [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json)
 - **API:** [workflows/H3_Streaming_v2.api.json](workflows/H3_Streaming_v2.api.json)
@@ -132,6 +190,31 @@ Accelerates MiniMax H3 Ref2VA on RTX 4070 12GB using FC1 W4A4 + Streaming VSA, v
 Combines **FC1 Plain ConvRot W4A4, preconverted INT8 Gate, and fixed padding decision cache**.
 Weight conversion is executed once offline; during generation, weights are loaded from CPU using ComfyUI's Dynamic VRAM / offload path.
 
+**Easy Windows installation with `setup.bat`; setup and full generation verified on ComfyUI v0.36.0.** With a compatible ComfyUI installation and the required models available, it handles Python selection, compatibility checks, node installation, and preconversion. Model weights are never downloaded automatically.
+
+### Installation at a glance
+
+| Item | Summary |
+|---|---|
+| Additional SSD space | **About 5.79 GB (5.39 GiB)** for the converted cache. Source models, text encoder, VAEs, and generated videos require separate space. |
+| Reusing a cache | Pass `-CacheSource`. Same-volume hard links consume almost no additional space for the cache; another volume requires a copy. |
+| Nodes added by this repository | **Two**: `H3V2PreconvertedLoader` and `H3V2StreamingVSAPatch`. |
+| External node dependencies | **Two packages**, KJNodes and MotionCache-FastVAE. `-InstallDependencies` installs only missing packages. These packages also contain nodes unrelated to this workflow. |
+
+### Measured results on ComfyUI v0.36.0
+
+One run on 2026-09-20, Windows 11 / RTX 4070 12GB: 1024×1792, 124 frames, 24 fps, 4 steps, seed 43, res_multistep/simple, Sigma Shift 12/3, ChunkFFN 4, VSA keep 5%, and FastVAE batch 2.
+
+| Metric | Measured result |
+|---|---:|
+| Generation time, including model loading | **209.233 seconds (about 3 min 29 sec)** |
+| Maximum observed GPU memory usage | **11,479 MiB** |
+| Process RAM peak, Windows Peak Working Set | **11,610.7 MiB** |
+| Output validation | Audio present, 124 frames, 24 fps, full FFmpeg decode passed |
+| Interruptions / retries | None |
+
+GPU usage was sampled every 60 seconds and on completion; it is not an instantaneous peak. This is a single compatibility run, not a speed comparison or quality assessment. A fully SHA-256-verified existing cache was reused, so fresh 50-block conversion and fresh dependency installation were not exercised in this run. See [VALIDATION.md](VALIDATION.md) for details.
+
 This directory can be distributed directly as the root of a GitHub repository.
 No external benchmark folders, references to older releases, experimental/discarded designs, or profiling code are required for execution.
 Model weights, converted caches, reference images, and generated output videos are not included.
@@ -147,6 +230,8 @@ FC2 remains INT8. QKV, Attention kernel, Gate INT8 arithmetic, ChunkFFN, FastVAE
 Standard ComfyUI classes and existing custom nodes are not globally monkey-patched. Unique node IDs prevent collisions with previous versions. Do not apply both legacy VSA and v2 VSA to the same MODEL simultaneously.
 
 ## 2. Tested Environment
+
+On 2026-09-20, setup and a complete 1024×1792 generation passed with **ComfyUI 0.36.0, Python 3.13.13, PyTorch 2.14.0+cu130, comfy-kitchen 0.2.34, and comfy-aimdo 0.5.5**. The single RTX 4070 12GB run took 209.233 seconds including model loading. See [VALIDATION.md](VALIDATION.md) for conditions and measurement limits. The original validation environment follows:
 
 - **OS**: Windows 11
 - **GPU**: NVIDIA GeForce RTX 4070 12GB
@@ -170,7 +255,25 @@ Required APIs:
   - [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE): `MiniMaxH3FastVAEDecode`.
 - `torch` and `safetensors` must come from the same Python environment used by ComfyUI.
 
-This repository includes no installer, pip script, auto-updater, or model downloader. Missing APIs are not added automatically. If your environment lacks these, set up a compatible ComfyUI instance.
+The Windows `setup.bat` installer uses an existing isolated ComfyUI Python. It does not update ComfyUI, PyTorch, or comfy-kitchen, and never downloads model weights. Missing runtime APIs cause a clear failure.
+
+### Windows setup
+
+Finish any active generation, then run `setup.bat` from the downloaded repository. Inside `custom_nodes`, it detects ComfyUI automatically; otherwise it asks for the ComfyUI directory. You can also specify it directly:
+
+```bat
+setup.bat -ComfyRoot "C:\ComfyUI_windows_portable\ComfyUI"
+```
+
+- Selects the portable `python_embeded` interpreter, a `.venv` in ComfyUI or its parent, or a `venv` inside ComfyUI. Use `-Python "...\python.exe"` when multiple candidates exist. Global Python is rejected.
+- Searches existing `models` and `extra_model_paths.yaml`. Use `-Model "...safetensors" -Gate "...safetensors"` for explicit source paths. The text encoder and VAEs must already be available to ComfyUI.
+- `-InstallDependencies` clones only missing KJNodes / MotionCache-FastVAE repositories and installs their requirements into the selected isolated Python. Existing nodes are not updated. Without this option, setup never runs pip.
+- Checks required APIs, native INT4 execution, and CPU offload/reload, then converts FC1 and the gate once into `ComfyUI\models\h3_preconverted\fc1_gate`. The original diffusion model remains necessary for generation.
+- Use `-CacheSource "...\cache"` to reuse an existing cache in this project's format. All shards, the source model, and gate are SHA-256 verified. Same-volume files are hard-linked; cross-volume files are copied. Do not edit hard-linked weights in place.
+- `-CheckOnly` checks the GPU, models, and any existing cache without writing files. It reports when conversion is still needed. Incomplete or mismatched caches are rejected and never overwritten.
+- When installing from another directory, differing installed code is preserved unless you pass `-Update` after reviewing the differences. Only this repository's distribution files are replaced.
+
+Restart ComfyUI when setup finishes. Open the bundled GUI workflow, select your reference images, and adjust loader model names if your weights are in subdirectories.
 
 ## 4. Required Models and Download Sources
 
@@ -195,17 +298,19 @@ Follow these 4 steps to get up and running:
 1. **Place this repository in custom_nodes**
    - Place this repository under `ComfyUI/custom_nodes/ComfyUI-MiniMax-H3-W4A4-VSA/`.
    - Ensure external nodes [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) and [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE) are installed.
-2. **Download required models**
+2. **Make required models available**
    - Place diffusion, text encoder, and VAE weights into their corresponding `ComfyUI/models/` subdirectories as listed in the table above.
    - Place `fasth3_vsa_gate.safetensors` in an accessible path (e.g., `ComfyUI/models/loras/fasth3_vsa_gate.safetensors`).
-3. **Run one-time preconversion**
-   - Run `convert.py --check` using ComfyUI's Python to verify native INT4 capability, then run the full conversion command to generate `h3_preconverted/fc1_gate` (see [One-Time Conversion Procedure](#6-one-time-conversion-procedure)).
+3. **Run setup.bat**
+   - Run `setup.bat` to select ComfyUI's isolated Python, check native INT4 compatibility, and generate or verify `h3_preconverted/fc1_gate`. Add `-InstallDependencies` if the external node packages are missing. Existing models are reused.
 4. **Open workflow and generate**
    - Start ComfyUI (recommended: `--disable-comfy-compiler`) and drag & drop [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json).
    - In the 3 `LoadImage` nodes, select your reference images (Full-body, Upper-body, Face close-up).
    - Verify that the loader's `cache_directory` points to `h3_preconverted/fc1_gate` and click **Queue Prompt**.
 
 ## 6. One-Time Conversion Procedure
+
+**`setup.bat` performs these checks and conversion automatically.** The commands below are an alternative for manual operation.
 
 Run conversion using **ComfyUI's own Python environment**. The example below uses PowerShell from the root of a Windows portable ComfyUI setup:
 
@@ -236,6 +341,18 @@ $h3Convert = '.\ComfyUI\custom_nodes\ComfyUI-MiniMax-H3-W4A4-VSA\convert.py'
 - Successful completion outputs `COMPLETE: FC1 50/50 + Gate 50/50` and writes `manifest.json`. Existing output directories are never overwritten or deleted. If conversion fails partway, the partial directory is left intact; resolve the issue and specify a new directory.
 
 ## 7. Workflow Usage
+
+### Changing sparsity
+
+Change **`keep_percent` in the “H3 v2 Streaming VSA (Preconverted Gate)” node**. This is the percentage retained by sparse attention, not the percentage removed.
+
+| `keep_percent` | Retained | Approximate reduction in the sparse region |
+|---:|---:|---:|
+| 5 (default) | 5% | 95% |
+| 10 | 10% | 90% |
+| 20 | 20% | 80% |
+
+Lower values are sparser. The accepted range is 0.1–100. Protected prefix regions, including text and references, are handled separately; these percentages do not describe the reduction in total model computation. **No weight reconversion is needed.** Change the value and generate again.
 
 - **GUI Workflow**: [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json)
 - **API Workflow**: [workflows/H3_Streaming_v2.api.json](workflows/H3_Streaming_v2.api.json)
