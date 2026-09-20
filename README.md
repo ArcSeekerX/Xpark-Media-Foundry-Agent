@@ -1,4 +1,4 @@
-> **実験ブランチ / Experimental branch:** Jevの層別スパース制御を含みます。最新方式は4step専用で、高速化目標は未達です。See [日本語](JEV_ADAPTIVE.md) / [English](JEV_ADAPTIVE.en.md) for setup, paired examples, API use and limitations.
+> **実験ブランチ / Experimental branch:** 正式実験手法 **009jev** を追加：通常モデル＋native SLAを初回からJevで層別制御。W4A4変換は不要。See [日本語](009JEV.md) / [English](009JEV.en.md). 採用比較は366.72→213.89秒（SLA＋Jev全体の効果、各1回）。旧W4A4/VSA制御は [旧方式の記録](JEV_ADAPTIVE.md)。
 
 [日本語](#comfyui-h3-streaming-v2) | [English](#english-documentation)
 
@@ -18,7 +18,7 @@ RTX 4070 12GBでMiniMax H3 Ref2VAを高速化する、FC1 W4A4 + Streaming VSA�
 |---|---|
 | SSD追加容量 | 変換キャッシュ **約5.79 GB（5.39 GiB）**。元モデル・Text Encoder・VAE・出力動画などは別途必要です。 |
 | 既存キャッシュの再利用 | `-CacheSource` を指定。同一ボリュームのハードリンクならキャッシュ分の追加消費はほぼありません。別ボリュームではコピーします。 |
-| 本リポジトリが追加するノード | **3個（本実験ブランチ）**：`H3V2PreconvertedLoader`、`H3V2StreamingVSAPatch`、`H3V2JevAdaptiveVSAPatch`。 |
+| 本リポジトリが追加するノード | **4個（本実験ブランチ）**：`H3V2PreconvertedLoader`、`H3V2StreamingVSAPatch`、`H3V2JevAdaptiveVSAPatch`、`H3JevNativeSLAPatch`（009jev）。 |
 | 外部ノードの依存 | KJNodesとMotionCache-FastVAEの**2パッケージ**。未導入なら `-InstallDependencies` で不足分を追加できます。各パッケージには本ワークフロー以外のノードも含まれます。 |
 
 ### ComfyUI v0.36.0での実測結果

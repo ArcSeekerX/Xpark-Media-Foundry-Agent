@@ -1,8 +1,10 @@
+> 旧W4A4/VSA制御の記録です。現在の009jevは [009JEV.md](009JEV.md) を参照してください。
+
 # Jev Adaptive VSA 実験版
 
 [English](JEV_ADAPTIVE.en.md)
 
-開発ブランチ `exp/jev-adaptive-vsa`。安定版の高速化を保証するリリースではありません。最新の検証対象は **layer_v5 / 4step** です。固定5%の212.20秒に対し、最新方式は219.15秒。180秒未満・固定5%相当の品質という目標は未達です。[実測と制限](docs/experiments/README.md)。
+開発ブランチ `exp/jev-adaptive-vsa`。安定版の高速化を保証するリリースではありません。このページの検証対象は **layer_v5 / 4step** です。固定5%の212.20秒に対し、最新方式は219.15秒。180秒未満・固定5%相当の品質という目標は未達です。[実測と制限](docs/experiments/README.md)。
 
 ## 必要条件と導入
 

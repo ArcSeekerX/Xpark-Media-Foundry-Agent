@@ -1,8 +1,10 @@
+> Historical W4A4/VSA control. For the current009jev method, see [009JEV.en.md](009JEV.en.md).
+
 # Experimental Jev Adaptive VSA
 
 [日本語](JEV_ADAPTIVE.md)
 
-Branch: `exp/jev-adaptive-vsa`. Start with **layer_v5, four steps**. This is a reproducible experiment, not a demonstrated acceleration release: fixed5 took212.20s, layer_v5 took219.15s. The under180s/quality target remains unmet. See [results](docs/experiments/README.md).
+Branch: `exp/jev-adaptive-vsa`. This page documents **layer_v5, four steps**. This is a reproducible experiment, not a demonstrated acceleration release: fixed5 took212.20s, layer_v5 took219.15s. The under180s/quality target remains unmet. See [results](docs/experiments/README.md).
 
 ## Setup
 

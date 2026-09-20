@@ -12,3 +12,5 @@ The distributed code is GPL-3.0-only; see LICENSE. Model weights are not include
 Changes in this distribution (2026-09-08): CPU-backed preconverted FC1 overlay loader; portable offline conversion/verification; preconverted INT8 Gate loading; block-wise Gate streaming; per-plan padding decision cache; standalone node IDs and workflows. Profilers, runtime FC1 conversion, experimental dispatch, and unadopted optimization variants are omitted.
 
 The original diffusion, Gate, VAE, and text-encoder weights and their derived quantized copies remain subject to their own upstream terms, including applicable MiniMax H3 model terms. This repository does not grant rights to redistribute those weights.
+
+009jev (experimental branch): imports native ComfyUI SLA and adds Jev keep-rate control. TypeSafe SDK is an optional external dependency under its own terms; it is not bundled. Its API service requires a user-provided account/key. The009jev path does not use W4A4 conversion or learned VSA gates.

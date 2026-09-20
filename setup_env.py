@@ -22,7 +22,9 @@ FILES = ('__init__.py', 'nodes.py', 'cache.py', 'streaming.py', 'convert.py',
          'THIRD_PARTY_NOTICES.md', 'VALIDATION.md', 'compatibility.json', '.gitignore',
          'adaptive.py', 'av_adaptive.py', 'block_adaptive.py', 'layer_adaptive.py',
          'jev_client.py', 'test_adaptive.py', 'test_sdk_transport.py',
-         'JEV_ADAPTIVE.md', 'JEV_ADAPTIVE.en.md', 'requirements-jev.txt')
+         'JEV_ADAPTIVE.md', 'JEV_ADAPTIVE.en.md', 'requirements-jev.txt',
+         'native_sla.py', 'native_sla_worker.py', 'test_native_sla.py',
+         '009JEV.md', '009JEV.en.md')
 
 
 def distribution_files():
