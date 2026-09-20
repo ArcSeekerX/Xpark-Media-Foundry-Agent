@@ -1,3 +1,5 @@
+> **実験ブランチ / Experimental branch:** Jevの層別スパース制御を含みます。最新方式は4step専用で、高速化目標は未達です。See [日本語](JEV_ADAPTIVE.md) / [English](JEV_ADAPTIVE.en.md) for setup, paired examples, API use and limitations.
+
 [日本語](#comfyui-h3-streaming-v2) | [English](#english-documentation)
 
 ---
@@ -16,7 +18,7 @@ RTX 4070 12GBでMiniMax H3 Ref2VAを高速化する、FC1 W4A4 + Streaming VSA�
 |---|---|
 | SSD追加容量 | 変換キャッシュ **約5.79 GB（5.39 GiB）**。元モデル・Text Encoder・VAE・出力動画などは別途必要です。 |
 | 既存キャッシュの再利用 | `-CacheSource` を指定。同一ボリュームのハードリンクならキャッシュ分の追加消費はほぼありません。別ボリュームではコピーします。 |
-| 本リポジトリが追加するノード | **2個**：`H3V2PreconvertedLoader` と `H3V2StreamingVSAPatch`。 |
+| 本リポジトリが追加するノード | **3個（本実験ブランチ）**：`H3V2PreconvertedLoader`、`H3V2StreamingVSAPatch`、`H3V2JevAdaptiveVSAPatch`。 |
 | 外部ノードの依存 | KJNodesとMotionCache-FastVAEの**2パッケージ**。未導入なら `-InstallDependencies` で不足分を追加できます。各パッケージには本ワークフロー以外のノードも含まれます。 |
 
 ### ComfyUI v0.36.0での実測結果
@@ -417,3 +419,7 @@ From [VALIDATION.md](VALIDATION.md), measured on Windows 11, RTX 4070 12GB:
 - Upstream origins and modifications are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Model weights remain subject to their respective upstream licenses, including applicable MiniMax H3 terms. This repository does not distribute or grant redistribution rights for model weights.
 
+
+## 実験: Jev Adaptive VSA
+
+固定keep率の既存ノードを残し、stepごとに次のkeep率をChoiceで選ぶ実験ノードを追加しています。使い方・通信上限・フォールバック・対応samplerは [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) を参照してください。

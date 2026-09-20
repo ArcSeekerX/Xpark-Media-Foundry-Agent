@@ -19,7 +19,17 @@ DEPENDENCIES = {
 }
 FILES = ('__init__.py', 'nodes.py', 'cache.py', 'streaming.py', 'convert.py',
          'setup.bat', 'setup.ps1', 'setup_env.py', 'README.md', 'LICENSE',
-         'THIRD_PARTY_NOTICES.md', 'VALIDATION.md', 'compatibility.json', '.gitignore')
+         'THIRD_PARTY_NOTICES.md', 'VALIDATION.md', 'compatibility.json', '.gitignore',
+         'adaptive.py', 'av_adaptive.py', 'block_adaptive.py', 'layer_adaptive.py',
+         'jev_client.py', 'test_adaptive.py', 'test_sdk_transport.py',
+         'JEV_ADAPTIVE.md', 'JEV_ADAPTIVE.en.md', 'requirements-jev.txt')
+
+
+def distribution_files():
+    files = [Path(n) for n in FILES]
+    for directory, pattern in [('workflows', '*.json'), ('examples', '*.json'), ('docs', '*')]:
+        files.extend(p.relative_to(HERE) for p in (HERE / directory).rglob(pattern) if p.is_file())
+    return files
 
 
 def run(args, cwd=None):
@@ -101,7 +111,7 @@ def main():
     missing = [name for name in DEPENDENCIES if not (root / 'custom_nodes' / name / '__init__.py').is_file()]
     if missing and (not args.install_dependencies or args.check_only):
         raise RuntimeError(f'Missing custom nodes: {missing}. Install them, or rerun with -InstallDependencies.')
-    files = [Path(n) for n in FILES] + [p.relative_to(HERE) for p in (HERE / 'workflows').glob('*.json')]
+    files = distribution_files()
     if target.resolve() != HERE and target.exists() and not args.update and not args.check_only:
         conflicts = [str(p) for p in files if (target / p).exists()
                      and (target / p).read_bytes() != (HERE / p).read_bytes()]

@@ -18,3 +18,11 @@ output/
 temp/
 user/
 validation/
+
+# Local SDK environments and credentials
+.venv/
+.venv-jev/
+.env
+.env.*
+*.pem
+*.key
