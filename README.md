@@ -1,5 +1,7 @@
 > **実験ブランチ / Experimental branch:** 正式実験手法 **009jev** を追加：通常モデル＋native SLAを初回からJevで層別制御。W4A4変換は不要。See [日本語](009JEV.md) / [English](009JEV.en.md). 採用比較は366.72→213.89秒（SLA＋Jev全体の効果、各1回）。旧W4A4/VSA制御は [旧方式の記録](JEV_ADAPTIVE.md)。
 
+> **解説記事 / Article (Japanese):** [JevによるMiniMax H3のAttentionスパース制御（検証・実装の解説）](https://note.com/sepiablue/n/n0b19389703eb)
+
 [日本語](#comfyui-h3-streaming-v2) | [English](#english-documentation)
 
 ---
