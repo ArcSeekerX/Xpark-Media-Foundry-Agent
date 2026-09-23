@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""009jev: native MiniMax H3 SLA with Jev keep-rate decisions from step one."""
+"""009jev: native MiniMax H3 SLA with keep-rate decisions from step one.
+
+Decisions come from the local Laya engine by default; set H3_DECISION_ENGINE=jev
+to use the TypeSafe Jev API worker instead (requires TYPESAFE_API_KEY)."""
 import json, math, logging, subprocess, time, sys, os
 from pathlib import Path
 import torch
@@ -8,6 +11,21 @@ from comfy_extras.nodes_sparse_attention import SparseAttnPatch, install_overrid
 
 def emit(event):
     logging.info('[009jev] ' + json.dumps(event, allow_nan=False))
+
+def _engine():
+    return os.environ.get('H3_DECISION_ENGINE', 'laya').strip().lower()
+
+def _request(state, sdk_python):
+    """One decision round trip: local Laya in-process, or the Jev SDK worker."""
+    if _engine() == 'jev':
+        r = subprocess.run([sdk_python, '-B', '-X', 'utf8', str(Path(__file__).with_name('native_sla_worker.py'))], input=json.dumps(state), capture_output=True, text=True, encoding='utf-8', timeout=25, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        assert r.returncode == 0, 'worker failed'
+        return json.loads(r.stdout)
+    try:
+        from .laya_client import native_ask
+    except ImportError:
+        from laya_client import native_ask
+    return native_ask(state)
 
 def sample(x, layout):
     out = {}
@@ -43,9 +61,7 @@ class Controller:
         self.requests += 1
         event = {'event': 'initial_decision', 'state': state}
         try:
-            r = subprocess.run([self.sdk, '-B', '-X', 'utf8', str(Path(__file__).with_name('native_sla_worker.py'))], input=json.dumps(state), capture_output=True, text=True, encoding='utf-8', timeout=25, creationflags=subprocess.CREATE_NO_WINDOW)
-            assert r.returncode == 0
-            answer = json.loads(r.stdout)
+            answer = _request(state, self.sdk)
             assert set(answer['decisions']) == {str(b) for b in range(50)}
             new = []
             for b in range(50):
@@ -84,9 +100,7 @@ class Controller:
             state = {'step_measured': step + 1, 'next_step': step + 2, 'choices_percent': [1, 3, 5, 10], 'protected': f'First step policy={self.initial_policy}; block0 on later steps keep5. All blocks execute. Native SLA: conditioning KV and audio query rows exact; no activation reuse. Same 009 normal weights and FFN.', 'objective': 'Allocate attention selectively to preserve speech/song, identity, motion and text while reducing compute. No forced variation or quota.', 'limitations': 'Sampled residual magnitude/rank and temporal change are uncalibrated proxies, not quality scores or measured sparse error. Audio exact query rows do not guarantee identical downstream audio.', 'blocks': {str(b): {kind: {'residual_relative_l2': round(rows[b][i], 6), 'rank': round((ranks[kind].index(b) + 1) / 50, 3), 'cross_step_change': None if rows[b][i + 1] < 0 else round(rows[b][i + 1], 6)} for kind, i in [('audio', 0), ('video', 2)]} for b in range(50)}, 'current_keep': self.keeps}
             self.requests += 1
             try:
-                r = subprocess.run([self.sdk, '-B', '-X', 'utf8', str(Path(__file__).with_name('native_sla_worker.py'))], input=json.dumps(state), capture_output=True, text=True, encoding='utf-8', timeout=25, creationflags=subprocess.CREATE_NO_WINDOW)
-                assert r.returncode == 0, 'worker failed'
-                answer = json.loads(r.stdout)
+                answer = _request(state, self.sdk)
                 assert set(answer['decisions']) == {str(b) for b in range(1, 50)}
                 new = [5.0] * 50
                 for b in range(1, 50):
@@ -121,11 +135,18 @@ class H3JevNativeSLAPatch:
     def patch(self, model, sdk_python='', initial_policy='jev_first', initial_context='{}', prompt_context=''):
         if initial_policy not in ('fixed5', 'fixed10', 'jev_first'):
             raise ValueError('Unknown initial policy')
-        if not os.environ.get('TYPESAFE_API_KEY', '').strip():
-            raise RuntimeError('Set TYPESAFE_API_KEY in the ComfyUI process environment')
-        sdk_python = sdk_python.strip() or sys.executable
-        if not Path(sdk_python).is_file():
-            raise ValueError('sdk_python must point to an existing Python executable')
+        if _engine() == 'jev':
+            if not os.environ.get('TYPESAFE_API_KEY', '').strip():
+                raise RuntimeError('Set TYPESAFE_API_KEY in the ComfyUI process environment')
+            sdk_python = sdk_python.strip() or sys.executable
+            if not Path(sdk_python).is_file():
+                raise ValueError('sdk_python must point to an existing Python executable')
+        else:
+            try:
+                from .laya_client import warmup
+            except ImportError:
+                from laya_client import warmup
+            warmup()  # fail fast at patch time, not mid-generation
         context = json.loads(initial_context or '{}')
         if not isinstance(context, dict):
             raise ValueError('initial_context must be a JSON object')

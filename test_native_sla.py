@@ -39,6 +39,10 @@ class NativePolicyTests(unittest.TestCase):
         self.logger = patch.object(module, 'emit', self.events.append)
         self.logger.start()
         self.addCleanup(self.logger.stop)
+        # These cases exercise the Jev worker transport; Laya-mode coverage is in test_laya_client.py.
+        self.engine = patch.dict(os.environ, {'H3_DECISION_ENGINE': 'jev'})
+        self.engine.start()
+        self.addCleanup(self.engine.stop)
 
     def controller(self, mode='jev_first'):
         return module.Controller(types.SimpleNamespace(), 'test-python', mode, '{"prompt":"test"}')
@@ -114,6 +118,14 @@ class NativePolicyTests(unittest.TestCase):
         self.assertEqual(c.keeps, [5] * 50)
         self.assertNotIn('do-not-log-sensitive', json.dumps(self.events))
 
+    def test_laya_mode_controller_uses_local_engine(self):
+        with patch.dict(os.environ, {'H3_DECISION_ENGINE': 'laya'}):
+            c = self.controller()
+            with patch.object(module, '_request', return_value=answer(True)) as request:
+                c.initialize()
+            self.assertEqual(c.keeps, [10] + [3] * 49)
+            self.assertEqual(request.call_count, 1)
+
     def test_sampling_excludes_reference_rows_and_copies_before_mutation(self):
         x = torch.arange(120 * 32, dtype=torch.float32).reshape(120, 32)
         layout = types.SimpleNamespace(segments=[(0, 20, 'ref_img'), (20, 40, 'audio'), (40, 120, 'video')])
@@ -127,12 +139,23 @@ class NativePolicyTests(unittest.TestCase):
     def test_node_defaults_and_actionable_preflight(self):
         fields = module.H3JevNativeSLAPatch.INPUT_TYPES()
         self.assertEqual(fields['optional']['initial_policy'][0][0], 'jev_first')
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {'H3_DECISION_ENGINE': 'jev'}, clear=True):
             with self.assertRaisesRegex(RuntimeError, 'TYPESAFE_API_KEY'):
                 module.H3JevNativeSLAPatch().patch(None)
-        with patch.dict(os.environ, {'TYPESAFE_API_KEY': 'unit-test-placeholder'}):
+        with patch.dict(os.environ, {'H3_DECISION_ENGINE': 'jev', 'TYPESAFE_API_KEY': 'unit-test-placeholder'}, clear=True):
             with self.assertRaisesRegex(ValueError, 'prompt_context'):
                 module.H3JevNativeSLAPatch().patch(None)
+
+    def test_laya_engine_needs_no_api_key_and_warms_up(self):
+        calls = []
+        import sys as _sys
+        fake = types.ModuleType('laya_client')
+        fake.warmup = lambda: calls.append('warmup')
+        with patch.dict(os.environ, {'H3_DECISION_ENGINE': 'laya'}, clear=True), \
+                patch.dict(_sys.modules, {'laya_client': fake}):
+            with self.assertRaisesRegex(ValueError, 'prompt_context'):
+                module.H3JevNativeSLAPatch().patch(None)
+        self.assertEqual(calls, ['warmup'])
 
     def test_portable_pair_only_inserts_native_node(self):
         a = json.loads((HERE / 'examples/matlow_fused_4step.api.json').read_text(encoding='utf-8'))

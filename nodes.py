@@ -115,7 +115,7 @@ class H3V2JevAdaptiveVSAPatch(H3V2StreamingVSAPatch):
         inputs["optional"] = {"max_skip_blocks": ("INT", {"default":20,"min":0,"max":49}), "max_consecutive_skips": ("INT", {"default":1,"min":1,"max":3}), "producer_chunk": ([4096, 8192, 16384], {"default":4096}), "policy": (["gate_v1", "av_v2", "block_v3", "layer_v4", "layer_v5"], {"default":"gate_v1"})}
         return inputs
 
-    DESCRIPTION = "Experimental Jev control. Fixed mode makes no API requests. layer_v5 requires four steps, starts at 5%, and allocates per-layer budgets. Legacy policies have different fallbacks."
+    DESCRIPTION = "Adaptive sparse attention. Local Laya decisions by default (no API key); set H3_DECISION_ENGINE=jev for the TypeSafe API. Fixed mode makes no requests. layer_v5 requires four steps, starts at 5%, and allocates per-layer budgets. Legacy policies have different fallbacks."
 
     def patch(self, model, cache, keep_percent=5.0, start_percent=0.0, end_percent=1.0,
               min_tokens=12288, verbose=True, mode="fixed", sdk_python="",
@@ -125,6 +125,11 @@ class H3V2JevAdaptiveVSAPatch(H3V2StreamingVSAPatch):
         settings = None if mode == "fixed" else dict(sdk_python=sdk_python,
             timeout=api_timeout, min_confidence=min_confidence, max_requests=max_requests, policy=policy)
         if settings is not None and policy == "block_v3":settings.update(initial_keep=keep_percent,max_skip_blocks=max_skip_blocks,max_consecutive_skips=max_consecutive_skips)
+        if settings is not None:
+            import os
+            if os.environ.get("H3_DECISION_ENGINE", "laya").strip().lower() != "jev":
+                from .laya_client import warmup
+                warmup()  # load the local checkpoint now, not at the first sampler step
         return super().patch(model, cache, keep_percent if settings is None else (5.0 if policy == "av_v2" else 10.0),
                              start_percent, end_percent, min_tokens, verbose, _adaptive=settings,
                              **({"producer_chunk":producer_chunk} if producer_chunk != 4096 else {}))
