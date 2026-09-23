@@ -10,10 +10,14 @@ log = logging.getLogger(__name__)
 
 
 def ask(state, sdk_python, timeout):
-    """Decision engine dispatch: local Laya by default, Jev API when H3_DECISION_ENGINE=jev."""
-    if os.environ.get("H3_DECISION_ENGINE", "laya").strip().lower() == "jev":
+    """Decision engine dispatch: local Laya by default; H3_DECISION_ENGINE=jev|openjev switches."""
+    engine = os.environ.get("H3_DECISION_ENGINE", "laya").strip().lower()
+    if engine == "jev":
         from .jev_client import ask as jev_ask
         return jev_ask(state, sdk_python, timeout)
+    if engine == "openjev":
+        from .openjev_client import ask as openjev_ask
+        return openjev_ask(state, sdk_python, timeout)
     from .laya_client import ask as laya_ask
     return laya_ask(state, sdk_python, timeout)
 ALLOWED = {"5": 5.0, "7.5": 7.5, "10": 10.0, "15": 15.0, "20": 20.0}

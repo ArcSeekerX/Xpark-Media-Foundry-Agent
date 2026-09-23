@@ -2,7 +2,8 @@
 """009jev: native MiniMax H3 SLA with keep-rate decisions from step one.
 
 Decisions come from the local Laya engine by default; set H3_DECISION_ENGINE=jev
-to use the TypeSafe Jev API worker instead (requires TYPESAFE_API_KEY)."""
+to use the TypeSafe Jev API worker (requires TYPESAFE_API_KEY), or
+H3_DECISION_ENGINE=openjev to use a local llama-server running OpenJev GGUF."""
 import json, math, logging, subprocess, time, sys, os
 from pathlib import Path
 import torch
@@ -16,11 +17,18 @@ def _engine():
     return os.environ.get('H3_DECISION_ENGINE', 'laya').strip().lower()
 
 def _request(state, sdk_python):
-    """One decision round trip: local Laya in-process, or the Jev SDK worker."""
-    if _engine() == 'jev':
+    """One decision round trip: local Laya in-process, OpenJev llama-server, or the Jev SDK worker."""
+    engine = _engine()
+    if engine == 'jev':
         r = subprocess.run([sdk_python, '-B', '-X', 'utf8', str(Path(__file__).with_name('native_sla_worker.py'))], input=json.dumps(state), capture_output=True, text=True, encoding='utf-8', timeout=25, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         assert r.returncode == 0, 'worker failed'
         return json.loads(r.stdout)
+    if engine == 'openjev':
+        try:
+            from .openjev_client import native_ask
+        except ImportError:
+            from openjev_client import native_ask
+        return native_ask(state)
     try:
         from .laya_client import native_ask
     except ImportError:
@@ -141,6 +149,12 @@ class H3JevNativeSLAPatch:
             sdk_python = sdk_python.strip() or sys.executable
             if not Path(sdk_python).is_file():
                 raise ValueError('sdk_python must point to an existing Python executable')
+        elif _engine() == 'openjev':
+            try:
+                from .openjev_client import warmup
+            except ImportError:
+                from openjev_client import warmup
+            warmup()  # fail fast at patch time, not mid-generation
         else:
             try:
                 from .laya_client import warmup
