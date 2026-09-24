@@ -31,7 +31,7 @@ FILES = ('__init__.py', 'nodes.py', 'cache.py', 'streaming.py', 'convert.py',
 
 def distribution_files():
     files = [Path(n) for n in FILES]
-    for directory, pattern in [('workflows', '*.json'), ('examples', '*.json'), ('docs', '*')]:
+    for directory, pattern in [('workflows', '*.json'), ('examples', '*.json'), ('docs', '*'), ('skills', '*')]:
         files.extend(p.relative_to(HERE) for p in (HERE / directory).rglob(pattern) if p.is_file())
     return files
 
