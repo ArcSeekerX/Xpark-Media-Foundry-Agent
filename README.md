@@ -1,190 +1,190 @@
-> **実験ブランチ / Experimental branch:** 正式実験手法 **009jev** を追加：通常モデル＋native SLAを初回からJevで層別制御。W4A4変換は不要。See [日本語](009JEV.md) / [English](009JEV.en.md). 採用比較は366.72→213.89秒（SLA＋Jev全体の効果、各1回）。旧W4A4/VSA制御は [旧方式の記録](JEV_ADAPTIVE.md)。
+> **实验分支 / Experimental branch:** 新增正式实验方法 **009jev**：普通模型 + native SLA，从首次起即用 Jev 进行逐层控制. 无需 W4A4 转换. See [日文](009JEV.md) / [English](009JEV.en.md). 采用对比为 366.72→213.89 秒（SLA + Jev 的整体效果，各测 1 次）. 旧的 W4A4/VSA 控制见 [旧方式的记录](JEV_ADAPTIVE.md).
 
-> **解説記事 / Article (Japanese):** [JevによるMiniMax H3のAttentionスパース制御（検証・実装の解説）](https://note.com/sepiablue/n/n0b19389703eb)
+> **解说文章 / Article (Japanese):** [基于 Jev 的 MiniMax H3 Attention 稀疏控制（验证与实现的解说）](https://note.com/sepiablue/n/n0b19389703eb)
 
-[日本語](#comfyui-h3-streaming-v2) | [English](#english-documentation)
+[简体中文](#comfyui-h3-streaming-v2) | [English](#english-documentation)
 
 ---
 
 # ComfyUI H3 Streaming v2
 
-RTX 4070 12GBでMiniMax H3 Ref2VAを高速化する、FC1 W4A4 + Streaming VSA構成です。832×1408 / 124f / 4stepで実生成検証済みです。
-**FC1 Plain ConvRot W4A4、事前保存したINT8 Gate、固定padding判定キャッシュ**を組み合わせます。
-重み変換は導入時に一度だけ行い、生成時はCPUからロードしてComfyUIのDynamic VRAM / offloadを利用します。
+在 RTX 4070 12GB 上加速 MiniMax H3 Ref2VA 的 FC1 W4A4 + Streaming VSA 配置. 已在 832×1408 / 124f / 4step 下完成实际生成验证.
+组合了 **FC1 Plain ConvRot W4A4，预先保存的 INT8 Gate，固定 padding 判定缓存**.
+权重转换仅在安装时执行一次，生成时从 CPU 加载并利用 ComfyUI 的 Dynamic VRAM / offload.
 
-**Windowsでは `setup.bat` で簡単に導入できます。ComfyUI v0.36.0で導入・実生成を確認済みです。** 対応ComfyUIと必要モデルを準備すれば、Python選択・互換性検査・ノード配置・事前変換をまとめて実行できます。モデルの自動ダウンロードは行いません。
+**在 Windows 上使用 `setup.bat` 即可轻松安装. 已在 ComfyUI v0.36.0 上完成安装与实际生成的确认.** 只要准备好兼容的 ComfyUI 和所需模型，即可一次性完成 Python 选择，兼容性检查，节点配置与预转换. 不会自动下载模型.
 
-### 導入前に知っておきたいこと
+### 安装前需要了解的事项
 
-| 項目 | 要点 |
+| 项目 | 要点 |
 |---|---|
-| SSD追加容量 | 変換キャッシュ **約5.79 GB（5.39 GiB）**。元モデル・Text Encoder・VAE・出力動画などは別途必要です。 |
-| 既存キャッシュの再利用 | `-CacheSource` を指定。同一ボリュームのハードリンクならキャッシュ分の追加消費はほぼありません。別ボリュームではコピーします。 |
-| 本リポジトリが追加するノード | **4個（本実験ブランチ）**：`H3V2PreconvertedLoader`、`H3V2StreamingVSAPatch`、`H3V2JevAdaptiveVSAPatch`、`H3JevNativeSLAPatch`（009jev）。 |
-| 外部ノードの依存 | KJNodesとMotionCache-FastVAEの**2パッケージ**。未導入なら `-InstallDependencies` で不足分を追加できます。各パッケージには本ワークフロー以外のノードも含まれます。 |
+| SSD 额外容量 | 转换缓存 **约 5.79 GB（5.39 GiB）**. 原始模型，Text Encoder，VAE，输出视频等还需另行占用空间. |
+| 复用已有缓存 | 指定 `-CacheSource`. 同一卷内的硬链接几乎不会为缓存增加额外占用；跨卷则会复制. |
+| 本仓库新增的节点 | **4 个（本实验分支）**：`H3V2PreconvertedLoader`，`H3V2StreamingVSAPatch`，`H3V2JevAdaptiveVSAPatch`，`H3JevNativeSLAPatch`（009jev）. |
+| 外部节点依赖 | KJNodes 和 MotionCache-FastVAE **共 2 个包**. 未安装时可用 `-InstallDependencies` 补齐缺失部分. 各包中还包含本工作流以外的节点. |
 
-### ComfyUI v0.36.0での実測結果
+### ComfyUI v0.36.0 上的实测结果
 
-2026-09-20、Windows 11 / RTX 4070 12GBで1回実行。1024×1792、124フレーム、24fps、4 steps、seed 43、res_multistep/simple、Sigma Shift 12/3、ChunkFFN 4、VSA keep 5%、FastVAE batch 2です。
+2026-09-20，Windows 11 / RTX 4070 12GB，单次运行. 参数为 1024×1792，124 帧，24fps，4 steps，seed 43，res_multistep/simple，Sigma Shift 12/3，ChunkFFN 4，VSA keep 5%，FastVAE batch 2.
 
-| 指標 | 実測結果 |
+| 指标 | 实测结果 |
 |---|---:|
-| 生成時間（モデル読み込み込み） | **209.233秒（約3分29秒）** |
-| GPU使用量の最大観測値 | **11,479 MiB** |
-| プロセスRAMピーク（Windows Peak Working Set） | **11,610.7 MiB** |
-| 出力検証 | 音声あり、124フレーム、24fps、FFmpeg全デコード成功 |
-| 中断・再実行 | なし |
+| 生成时间（含模型加载） | **209.233 秒（约 3 分 29 秒）** |
+| GPU 使用量最大观测值 | **11,479 MiB** |
+| 进程 RAM 峰值（Windows Peak Working Set） | **11,610.7 MiB** |
+| 输出验证 | 含音频，124 帧，24fps，FFmpeg 全部解码成功 |
+| 中断/重跑 | 无 |
 
-GPU使用量は60秒間隔と完了時の標本で、瞬間ピークではありません。単発の互換性確認であり、他方式との速度比較や画質評価ではありません。既存キャッシュを全SHA-256照合して再利用したため、この確認では新規50層変換・依存ノード新規インストールは実施していません。詳細は [VALIDATION.md](VALIDATION.md) を参照してください。
+GPU 使用量为每 60 秒间隔及完成时的采样值，并非瞬时峰值. 本次为单次兼容性确认，不是与其他方式的速度对比或画质评估. 由于复用了已通过全部 SHA-256 校验的已有缓存，本次确认未执行全新的 50 层转换和依赖节点的全新安装. 详情请参阅 [VALIDATION.md](VALIDATION.md).
 
-このディレクトリの内容を、そのままGitHubリポジトリのルートとして配布できます。
-別の評価フォルダや旧リリースへの参照、実験・失敗案・profiling用コードは実行に必要ありません。
-モデル、変換済み重み、参照画像、出力動画は同梱しません。
+本目录的内容可以直接作为 GitHub 仓库的根目录发布.
+其他评估文件夹，对旧版本的引用，实验/失败方案以及 profiling 用代码均非运行所需.
+不附带模型，已转换权重，参考图像和输出视频.
 
-## 構成
+## 构成
 
-- `H3V2PreconvertedLoader`: 元INT8モデルのCPU state_dictへ、50層のFC1 W4A4 shardを重ねて標準ModelPatcherを構築。MODELとキャッシュ接続を出力。
-- `H3V2StreamingVSAPatch`: 事前保存済みINT8 GateをCPUで保持し、現在のblockのGateだけGPUへ転送。固定planのpadding判定を一度だけCPUで計算。
-- `convert.py`: 既存INT8 ConvRot FC1 → ネイティブConvRot対応BF16復元 → Plain W4A4。Gateも同時に事前保存。
-- GUI/API workflow: 同じノード・設定・参照順序。GUI版はComfyUIへドラッグ＆ドロップ可能。
+- `H3V2PreconvertedLoader`：在原始 INT8 模型的 CPU state_dict 上叠加 50 层 FC1 W4A4 shard，构建标准 ModelPatcher. 输出 MODEL 和 cache 连接.
+- `H3V2StreamingVSAPatch`：将预先保存的 INT8 Gate 保留在 CPU，仅把当前 block 的 Gate 传输到 GPU. 固定 plan 的 padding 判定只在 CPU 上计算一次.
+- `convert.py`：将现有 INT8 ConvRot FC1 → 还原为 native ConvRot 兼容的 BF16 → Plain W4A4. 同时预先保存 Gate.
+- GUI/API workflow：相同的节点，设置与引用顺序. GUI 版可直接拖放到 ComfyUI.
 
-FC2はINT8のままです。QKV、Attention kernel、GateのINT8計算式、ChunkFFN、FastVAE、sampler / schedulerを変更しません。SVDQuantは使用しません。
-通常ComfyUIのクラスや既存custom nodeをグローバルに差し替えません。旧版と異なるノードIDなので同居可能です。ただし同じMODELへ旧VSAとv2 VSAを二重適用しないでください。
+FC2 保持 INT8 不变. 不修改 QKV，Attention kernel，Gate 的 INT8 计算公式，ChunkFFN，FastVAE，sampler / scheduler. 不使用 SVDQuant.
+不会全局替换 ComfyUI 原生类或现有 custom node. 节点 ID 与旧版不同，因此可以共存. 但请勿在同一个 MODEL 上重复叠加旧版 VSA 和 v2 VSA.
 
-## 必要な環境
+## 所需环境
 
-2026-09-20: **ComfyUI 0.36.0、Python 3.13.13、PyTorch 2.14.0+cu130、comfy-kitchen 0.2.34、comfy-aimdo 0.5.5** でセットアップと1024×1792の実生成を確認しました。RTX 4070 12GBでモデル読込を含め209.233秒（単発）。詳細は [VALIDATION.md](VALIDATION.md) を参照してください。
+2026-09-20：已在 **ComfyUI 0.36.0，Python 3.13.13，PyTorch 2.14.0+cu130，comfy-kitchen 0.2.34，comfy-aimdo 0.5.5** 上确认安装和 1024×1792 的实际生成. RTX 4070 12GB 上含模型加载共 209.233 秒（单次）. 详情请参阅 [VALIDATION.md](VALIDATION.md).
 
-初回検証環境: Windows 11、RTX 4070 12GB、Python 3.13.14、PyTorch 2.13.0+cu130、comfy-kitchen 0.2.33、comfy-aimdo 0.5.2。
-ComfyUI検証commitは `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`。
-詳細なファイル指紋は [compatibility.json](compatibility.json) に記録します。
-同じversion表示だけではGPU向けバイナリの互換性を保証できないため、後述の `--check` を実行してください。
+首次验证环境：Windows 11，RTX 4070 12GB，Python 3.13.14，PyTorch 2.13.0+cu130，comfy-kitchen 0.2.33，comfy-aimdo 0.5.2.
+ComfyUI 验证 commit 为 `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`.
+详细的文件指纹记录在 [compatibility.json](compatibility.json) 中.
+仅凭相同的版本号显示无法保证 GPU 二进制兼容性，因此请运行后述的 `--check`.
 
-必要API:
+所需 API：
 
-- ComfyUI: `comfy.quant_ops.QUANT_ALGOS['convrot_w4a4']`、native quantized state_dict loader、`comfy_extras.nodes_sparse_attention`。
-- comfy-kitchen: `TensorCoreConvRotW4A4Layout`、CUDA `cutlass_int4_dequant`、`sol_attn_chunked`、`int8_linear`。
-- この検証版kitchenではnative ConvRot INT4はSM8x（Ampere/Ada）経路です。Hopper/BlackwellやINT8 fallback強制設定は対応対象から除外して停止します。**実測対象はRTX 4070のみ**。他GPUは `--check` に加え実生成で確認してください。
-- [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes): `MiniMaxChunkFeedForward`。
-- [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE): `MiniMaxH3FastVAEDecode`。
-- `torch` / `safetensors` はComfyUIと同じPython環境のものを使用します。
+- ComfyUI：`comfy.quant_ops.QUANT_ALGOS['convrot_w4a4']`，native quantized state_dict loader，`comfy_extras.nodes_sparse_attention`.
+- comfy-kitchen：`TensorCoreConvRotW4A4Layout`，CUDA `cutlass_int4_dequant`，`sol_attn_chunked`，`int8_linear`.
+- 在该验证版 kitchen 中，native ConvRot INT4 走 SM8x（Ampere/Ada）路径. Hopper/Blackwell 及强制 INT8 fallback 的设置会被排除在支持范围之外并停止. **实测对象仅限 RTX 4070**. 其他 GPU 请在 `--check` 之外再通过实际生成确认.
+- [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes)：`MiniMaxChunkFeedForward`.
+- [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE)：`MiniMaxH3FastVAEDecode`.
+- `torch` / `safetensors` 使用与 ComfyUI 相同 Python 环境中的版本.
 
-Windows用の `setup.bat` を同梱しています。既存ComfyUIの専用Pythonで検査・導入・一度だけの変換を行います。ComfyUI本体・PyTorch・comfy-kitchenの自動更新やモデルダウンロードは行いません。不足APIがある場合は停止します。
+附带 Windows 用的 `setup.bat`. 它使用现有 ComfyUI 的专用 Python 进行检查，安装和仅执行一次的转换. 不会自动更新 ComfyUI 本体，PyTorch，comfy-kitchen，也不会下载模型. 存在缺失 API 时会停止.
 
-### Windows簡単セットアップ
+### Windows 简易安装
 
-ComfyUIでの生成を終了してから、リポジトリを取得・展開し、`setup.bat` を実行してください。`custom_nodes` 内へ配置済みならComfyUIを自動検出し、それ以外ではComfyUIフォルダを入力します。コマンドラインからは次のように指定できます。
+请先结束 ComfyUI 中的生成任务，然后获取并解压仓库，运行 `setup.bat`. 如果已放置在 `custom_nodes` 内，会自动检测 ComfyUI；否则需要输入 ComfyUI 文件夹路径. 也可以通过命令行按如下方式指定：
 
 ```bat
 setup.bat -ComfyRoot "C:\ComfyUI_windows_portable\ComfyUI"
 ```
 
-- portableの `python_embeded\python.exe` またはComfyUI内／親フォルダの `.venv\Scripts\python.exe`、ComfyUI内の `venv\Scripts\python.exe` を探します。複数候補がある場合は `-Python "...\python.exe"` で指定してください。グローバルPythonは拒否します。
-- ComfyUIの `models` と `extra_model_paths.yaml` から既存モデルを探索します。元DiffusionモデルとGateは `-Model "...safetensors" -Gate "...safetensors"` でも指定できます。Text encoder・VAEは先にComfyUIで使える状態にしてください。
-- 外部ノード不足時は、`-InstallDependencies` を付けるとKJNodes / MotionCache-FastVAEの不足分だけを取得し、そのrequirementsを専用Pythonへインストールします。既存ノードは更新しません。通常のセットアップはpipを実行しません。
-- 対応API・ネイティブINT4・CPUオフロード／再ロードを確認してから、FC1とGateを `ComfyUI\models\h3_preconverted\fc1_gate` に事前変換します。元Diffusionモデルも生成時に必要です。
-- 既存の本プロジェクト形式のキャッシュは `-CacheSource "...\cache"` で指定できます。元モデル・Gateと全shardのSHA-256を照合し、同一ボリュームではハードリンク、それ以外ではコピーします。ハードリンク元／先の重みを直接編集しないでください。
-- `-CheckOnly` はGPU検査とモデル／既存キャッシュの検証だけを行い、ファイルを作成しません。キャッシュがない場合はその旨を表示します。不完全・不一致の既存キャッシュは上書きせず停止します。
-- 別の場所から再導入するときにインストール済みコードが異なる場合は停止します。差分を確認後に `-Update` を指定すると、このリポジトリの配布ファイルだけを置き換えます。
+- 会查找 portable 的 `python_embeded\python.exe`，或 ComfyUI 内/上级文件夹的 `.venv\Scripts\python.exe`，以及 ComfyUI 内的 `venv\Scripts\python.exe`. 有多个候选时请用 `-Python "...\python.exe"` 指定. 拒绝使用全局 Python.
+- 会从 ComfyUI 的 `models` 和 `extra_model_paths.yaml` 中搜索现有模型. 原始 Diffusion 模型和 Gate 也可以用 `-Model "...safetensors" -Gate "...safetensors"` 指定. 请提前让 Text encoder 和 VAE 在 ComfyUI 中可用.
+- 缺少外部节点时，加上 `-InstallDependencies` 会仅获取缺失的 KJNodes / MotionCache-FastVAE，并将其 requirements 安装到专用 Python. 不会更新已有节点. 常规安装不会执行 pip.
+- 确认所需 API，native INT4，CPU offload/重新加载之后，将 FC1 和 Gate 预转换到 `ComfyUI\models\h3_preconverted\fc1_gate`. 原始 Diffusion 模型在生成时同样需要.
+- 已有的本项目格式缓存可用 `-CacheSource "...\cache"` 指定. 会对原始模型，Gate 和全部 shard 进行 SHA-256 校验；同一卷内使用硬链接，跨卷则复制. 请勿直接编辑硬链接源/目标的权重.
+- `-CheckOnly` 仅执行 GPU 检查和模型/已有缓存的验证，不创建任何文件. 没有缓存时会显示相应提示. 对于不完整或不一致的已有缓存，不会覆盖，而是停止.
+- 从其他位置重新安装时，如果已安装的代码不同会停止. 确认差异后指定 `-Update`，将仅替换本仓库的发布文件.
 
-完了後にComfyUIを再起動し、付属GUIワークフローの参照画像を自分の画像へ変更してください。モデルをサブフォルダに置いている場合は各loaderでも選択してください。
+完成后请重启 ComfyUI，并将附带 GUI 工作流中的参考图像换成自己的图像. 如果模型放在子文件夹中，也请同时在各 loader 中选择.
 
-## モデル
+## 模型
 
-付属workflowのファイル名です。Gateは通常のLoRAとして適用しません。
+以下是附带 workflow 中使用的文件名. Gate 不作为普通 LoRA 应用.
 
-| 用途 | ファイル | ComfyUI内の配置先 / 配布元 |
+| 用途 | 文件 | ComfyUI 内的存放位置 / 发布来源 |
 |---|---|---|
-| Diffusion | `minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors` | `models/diffusion_models/`・[MATLOWAI](https://huggingface.co/MATLOWAI/minimax-h3-fused-turbo-int8-convrot) |
-| VSA Gate | `fasth3_vsa_gate.safetensors` | 変換時にパス指定・[barelymining](https://huggingface.co/barelymining/ComfyUI-MiniMax-H3-FastVideo) |
-| Text encoder | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `models/text_encoders/`・[Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
-| Video VAE | `minimax_h3_video_vae_int8_convrot.safetensors` | `models/vae/`・[Kijai](https://huggingface.co/Kijai/MiniMax-H3-experimental) |
-| Audio VAE | `minimax_h3_audio_vae_fp32.safetensors` | `models/vae/`・[Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
+| Diffusion | `minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors` | `models/diffusion_models/` · [MATLOWAI](https://huggingface.co/MATLOWAI/minimax-h3-fused-turbo-int8-convrot) |
+| VSA Gate | `fasth3_vsa_gate.safetensors` | 转换时通过路径指定，[barelymining](https://huggingface.co/barelymining/ComfyUI-MiniMax-H3-FastVideo) |
+| Text encoder | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `models/text_encoders/` · [Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
+| Video VAE | `minimax_h3_video_vae_int8_convrot.safetensors` | `models/vae/` · [Kijai](https://huggingface.co/Kijai/MiniMax-H3-experimental) |
+| Audio VAE | `minimax_h3_audio_vae_fp32.safetensors` | `models/vae/` · [Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
 
-BF16/FP16元モデルは不要です。変換ツールは上記INT8 ConvRotの50層・形状・キーを前提にし、異なる構造は拒否します。
-元Diffusionモデルは、FC1以外の重みを読み込むため生成時にも必要です。変換したキャッシュだけでは動きません。
-追加のTurbo/FastH3 LoRAは付属workflowでは使用しません。
+不需要 BF16/FP16 原始模型. 转换工具以上述 INT8 ConvRot 的 50 层，形状和键名为前提，结构不同则拒绝.
+原始 Diffusion 模型在生成时仍然需要，用于读取 FC1 以外的权重. 仅靠转换后的缓存无法运行.
+附带 workflow 中不使用额外的 Turbo/FastH3 LoRA.
 
-## 導入と一度だけの変換
+## 安装与一次性转换
 
-通常は上記の **`setup.bat` を使うだけ**で検査と変換を行えます。以下は手動で実行したい場合の手順です。
+通常**只需使用上述 `setup.bat`** 即可完成检查与转换. 以下是希望手动执行时的步骤.
 
-1. このリポジトリ全体を `ComfyUI/custom_nodes/ComfyUI-MiniMax-H3-W4A4-VSA/` に配置します。
-2. 上記モデルと外部ノードを利用可能にします。起動中の生成と変換がGPUを競合しないよう、生成の終了後に変換してください。
-3. **ComfyUI自身のPython**で確認・変換します。以下はWindows portableのルートから実行するPowerShell例です。
+1. 将本仓库整体放置到 `ComfyUI/custom_nodes/ComfyUI-MiniMax-H3-W4A4-VSA/`.
+2. 使上述模型和外部节点可用. 为避免正在运行的生成任务与转换争抢 GPU，请在生成结束后再进行转换.
+3. 使用 **ComfyUI 自带的 Python** 进行确认与转换. 以下是从 Windows portable 根目录执行的 PowerShell 示例.
 
 ```powershell
 $h3Python = '.\python_embeded\python.exe'
 $h3Root = '.\ComfyUI'
 $h3Convert = '.\ComfyUI\custom_nodes\ComfyUI-MiniMax-H3-W4A4-VSA\convert.py'
 
-# 数秒のnative INT4 / CPU offload / 再GPUロード確認。ファイル生成なし。
+# 耗时数秒的 native INT4 / CPU offload / 重新加载到 GPU 确认. 不生成文件.
 & $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root --check --gpu 0
 
-# 50層を順番に事前変換。出力先は存在しない新しいディレクトリを指定。
+# 依次预转换 50 层. 输出目录请指定一个不存在的新目录.
 & $h3Python -B -X utf8 $h3Convert `
   --comfy-root $h3Root `
   --model '.\ComfyUI\models\diffusion_models\minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors' `
   --gate '.\ComfyUI\models\loras\fasth3_vsa_gate.safetensors' `
   --output '.\ComfyUI\models\h3_preconverted\fc1_gate' --gpu 0
 
-# コピー後・破損が疑われるときの全キャッシュSHA-256検証。
+# 复制后或怀疑损坏时，对全部缓存进行 SHA-256 验证.
 & $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root `
   --verify '.\ComfyUI\models\h3_preconverted\fc1_gate'
 ```
 
-`--gpu` は変換プロセスだけのCUDA選択です。通常ComfyUIのGPU設定は変えません。
-venv環境では `$h3Python` をそのvenvのPythonへ置換します。Linuxは同じ引数を1行で実行できますが、このリリースでは未検証です。
+`--gpu` 仅用于转换进程的 CUDA 选择. 不会改变 ComfyUI 通常的 GPU 设置.
+venv 环境下请将 `$h3Python` 替换为该 venv 的 Python. Linux 可以用相同参数在一行内执行，但本版本尚未验证.
 
-必要な追加ディスク容量は約 **5.8 GB**（FC1約3.86 GB＋Gate約1.93 GB）。RAMはモデル全体・Text Encoder・VAEも使うため、12GB VRAMだけでは容量条件を満たしません。検証PCのRAMは約49GB、実行時モデルstagingは約16GiBでした。
-変換時に全50層をGPU常駐させず、1層ずつ保存とGPU往復検証を行います。
+所需的额外磁盘空间约为 **5.8 GB**（FC1 约 3.86 GB + Gate 约 1.93 GB）. 由于 RAM 还要用于整个模型，Text Encoder 和 VAE，仅有 12GB VRAM 无法满足容量条件. 验证 PC 的 RAM 约为 49GB，运行时模型 staging 约为 16GiB.
+转换时不会让全部 50 层常驻 GPU，而是逐层进行保存和 GPU 往返验证.
 
-完了時は `COMPLETE: FC1 50/50 + Gate 50/50` と表示され、最後に `manifest.json` を書きます。
-既存出力先の上書き・削除はしません。途中で失敗した場合、未完了ディレクトリを残して停止します。原因を直し、別の新しい出力先で実行してください。
+完成时会显示 `COMPLETE: FC1 50/50 + Gate 50/50`，并在最后写入 `manifest.json`.
+不会覆盖或删除已有输出目录. 中途失败时，会保留未完成的目录并停止. 请修复原因后，使用另一个新的输出目录重新执行.
 
-## Workflowを実行
+## 运行 Workflow
 
-### スパース率を変更するには
+### 更改稀疏率
 
-**「H3 v2 Streaming VSA (Preconverted Gate)」ノードの `keep_percent`** を変更します。指定値は削減率ではなく、疎なattentionで保持する割合です。
+修改 **“H3 v2 Streaming VSA (Preconverted Gate)”节点的 `keep_percent`**. 该值不是削减率，而是稀疏 attention 中保留的比例.
 
-| `keep_percent` | 保持率 | 対象領域の概算削減率 |
+| `keep_percent` | 保留率 | 目标区域的估算削减率 |
 |---:|---:|---:|
-| 5（初期値） | 5% | 95% |
+| 5（初始值） | 5% | 95% |
 | 10 | 10% | 90% |
 | 20 | 20% | 80% |
 
-小さいほど疎になります。設定範囲は0.1〜100です。テキスト・参照などのprefix保護領域は別扱いなので、表の割合はモデル全体の計算量削減率ではありません。**変更時の重み再変換は不要**です。値を変更して再度生成してください。
+值越小越稀疏. 设置范围为 0.1–100. 文本，参考图等 prefix 保护区域会单独处理，因此表中的比例并非整个模型计算量的削减率. **更改时无需重新转换权重**. 修改数值后重新生成即可.
 
 - **GUI:** [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json)
 - **API:** [workflows/H3_Streaming_v2.api.json](workflows/H3_Streaming_v2.api.json)
 
-ComfyUIを再起動してGUI版を読み込み、Reference 1/2/3を自分の画像へ差し替えます（全身・上半身・顔の順）。
-`cache_directory=h3_preconverted/fc1_gate` は **ComfyUI/modelsからの相対パス**です。絶対パスも指定できます。
-Loaderの `cache` 出力をVSAノードの `cache` 入力へ接続します。モデル名・キャッシュ・workflowをひと組で管理してください。
+重启 ComfyUI，加载 GUI 版工作流，将 Reference 1/2/3 替换为自己的图像（按全身，上半身，脸部的顺序）.
+`cache_directory=h3_preconverted/fc1_gate` 是**相对于 ComfyUI/models 的相对路径**. 也可以指定绝对路径.
+将 Loader 的 `cache` 输出连接到 VSA 节点的 `cache` 输入. 请将模型名，缓存，workflow 作为一组进行管理.
 
-推奨起動オプションは `--disable-comfy-compiler`。計測環境では `--disable-pinned-memory` も使用しました。
-このオプション下でも、本ノードのGateは明示的にpinを試みます。失敗時は通常のCPU tensorを保持します。
+推荐启动选项为 `--disable-comfy-compiler`. 测量环境中还使用了 `--disable-pinned-memory`.
+即使在该选项下，本节点的 Gate 也会显式尝试 pin；失败时保留普通 CPU tensor.
 
-付属設定: **832×1408、124 frames、24 fps、seed 43、4 steps、res_multistep / simple、Sigma Shift 12/3、ChunkFFN 4、VSA keep 5%、FastVAE batch 2**。
-出力先はComfyUI標準の `output/H3_Streaming_v2_*.mp4` です。
+附带设置：**832×1408，124 frames，24 fps，seed 43，4 steps，res_multistep / simple，Sigma Shift 12/3，ChunkFFN 4，VSA keep 5%，FastVAE batch 2**.
+输出位置为 ComfyUI 标准的 `output/H3_Streaming_v2_*.mp4`.
 
-API版はGUI用JSONと異なり、`{"prompt": <API JSON>, "client_id": "..."}` として通常のComfyUI `/prompt` に渡します。
-APIでも画像は事前にComfyUIのinputへ配置し、3つのLoadImageのファイル名を変更してください。
-サンプルは汎用の参照説明を使っています。評価時の個人用参照画像は非同梱のため、第三者の入力で同一画素や同じ秒数になる保証はありません。
+API 版与 GUI 用 JSON 不同，需要以 `{"prompt": <API JSON>, "client_id": "..."}` 的形式提交给标准的 ComfyUI `/prompt` 接口.
+使用 API 时，也需要提前将图像放入 ComfyUI 的 input 目录，并修改 3 个 LoadImage 的文件名.
+示例使用的是通用的参考说明. 由于评估时使用的个人参考图像未附带，无法保证第三方输入会得到相同像素或相同耗时.
 
-## 確認と制限
+## 确认与限制
 
-- consoleの `[H3 v2]` にFC1 50層、Gate 50層、runtime weight conversion 0sが表示されます。
-- `verbose=True` で `H3 v2 sparse producer` を確認します。CUDA/BF16/head_dimやtoken数・sigma範囲が不適合なら、ComfyUIの既存dense経路になります。完走だけではVSA使用の証明にはなりません。
-- prefixは常にexact KV / dense-query sinkです。効果のなかった `sink_conditioning` や不採用のpadding行省略の切替は公開していません。
-- 元DiffusionモデルまたはGateを変更した場合はキャッシュを新規作成してください。追加LoRAやモデル編集との組合せは未検証です。
-- runtimeは高速なheader/サイズ/shape/metadata検査を行い、全ファイルのSHA-256は毎回計算しません。`--verify` に `--model` / `--gate` を追加すると元weightの全内容も照合できます。mtime・ユーザー名・絶対パスに依存しません。
-- `ModuleNotFoundError` / API不足は別の対応環境を用意してから再確認してください。この配布物を入れただけで古いComfyUIが対応するわけではありません。
-- `ModelMMAP`のアクセスエラーは元モデルとキャッシュの読取権限・共有状態を確認してください。ツールは権限変更や他プロセスの停止を行いません。
+- 控制台 `[H3 v2]` 中会显示 FC1 50 层，Gate 50 层，runtime weight conversion 0s.
+- 通过 `verbose=True` 确认 `H3 v2 sparse producer`. 如果 CUDA/BF16/head_dim 或 token 数，sigma 范围不匹配，会回退到 ComfyUI 现有的 dense 路径. 仅跑完流程并不能证明使用了 VSA.
+- prefix 始终是 exact KV / dense-query sink. 未生效的 `sink_conditioning` 以及未采用的 padding 行省略等切换开关不予公开.
+- 如果更改了原始 Diffusion 模型或 Gate，请重新创建缓存. 与额外 LoRA 或模型编辑的组合尚未验证.
+- runtime 执行快速的 header/大小/shape/metadata 检查，不会每次都对所有文件计算 SHA-256. 在 `--verify` 中加上 `--model` / `--gate` 还可以校验原始权重的全部内容. 不依赖 mtime，用户名或绝对路径.
+- 遇到 `ModuleNotFoundError` / API 缺失时，请先准备其他兼容环境再重新确认. 仅仅放入本发布物并不会让旧版 ComfyUI 变得兼容.
+- 出现 `ModelMMAP` 访问错误时，请检查原始模型和缓存的读取权限与共享状态. 本工具不会修改权限或终止其他进程.
 
-性能・検証範囲は [VALIDATION.md](VALIDATION.md) を参照してください。動画の主観的な画質・キャラ再現・音声品質は評価していません。
-ソースは [GPL-3.0](LICENSE)、由来と改変点は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。重みには各配布元のライセンスが適用されます。
+性能与验证范围请参阅 [VALIDATION.md](VALIDATION.md). 视频的主观画质，角色还原度和音频质量未做评估.
+源代码采用 [GPL-3.0](LICENSE)，来源与修改点见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). 权重适用各自发布方的许可证.
 
 ---
 
@@ -422,6 +422,6 @@ From [VALIDATION.md](VALIDATION.md), measured on Windows 11, RTX 4070 12GB:
 - Model weights remain subject to their respective upstream licenses, including applicable MiniMax H3 terms. This repository does not distribute or grant redistribution rights for model weights.
 
 
-## 実験: Jev Adaptive VSA
+## 实验：Jev Adaptive VSA
 
-固定keep率の既存ノードを残し、stepごとに次のkeep率をChoiceで選ぶ実験ノードを追加しています。使い方・通信上限・フォールバック・対応samplerは [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) を参照してください。
+在保留固定 keep 率的现有节点的同时，新增了实验节点，可在每个 step 通过 Choice 选择下一步的 keep 率. 使用方法，通信上限，fallback，支持的 sampler 请参阅 [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md).

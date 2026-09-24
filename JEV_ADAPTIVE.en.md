@@ -2,7 +2,7 @@
 
 # Experimental Jev Adaptive VSA
 
-[日本語](JEV_ADAPTIVE.md)
+[日语](JEV_ADAPTIVE.md)
 
 Branch: `exp/jev-adaptive-vsa`. This page documents **layer_v5, four steps**. This is a reproducible experiment, not a demonstrated acceleration release: fixed5 took212.20s, layer_v5 took219.15s. The under180s/quality target remains unmet. See [results](docs/experiments/README.md).
 
@@ -23,7 +23,7 @@ Set node900's `sdk_python` to that environment's absolute python.exe path. Blank
 
 ## Credentials and transmitted data
 
-Set `TYPESAFE_API_KEY` in the environment of the process that launches ComfyUI. An already-running server will not inherit a later change. Use the hidden-input PowerShell block in the [Japanese guide](JEV_ADAPTIVE.md#apiキーをファイルに書かず起動する); it reads a SecureString and populates only the process environment. Never put a literal key in a workflow, script, log or commit. Remove the parent-shell variable after use with `Remove-Item Env:TYPESAFE_API_KEY`.
+Set `TYPESAFE_API_KEY` in the environment of the process that launches ComfyUI. An already-running server will not inherit a later change. Use the hidden-input PowerShell block in the [中文指南](JEV_ADAPTIVE.md#不把-api-密钥写入文件直接启动); it reads a SecureString and populates only the process environment. Never put a literal key in a workflow, script, log or commit. Remove the parent-shell variable after use with `Remove-Item Env:TYPESAFE_API_KEY`.
 
 The worker does not log the key, HTTP headers or exception bodies. State sent to TypeSafe includes sampled aggregate audio/video activation statistics, sigma, layer indices, current keep ratios, and fixed experimental goals/character and speech feedback. It does not contain raw images/audio, model weights or the API key. Decision logs include statistics, responses and token usage.
 

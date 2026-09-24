@@ -1,37 +1,37 @@
-> 旧W4A4/VSA制御の記録です。現在の009jevは [009JEV.md](009JEV.md) を参照してください。
+> 这是旧版 W4A4/VSA 控制的记录。当前的 009jev 请参阅 [009JEV.md](009JEV.md)。
 
-# Jev Adaptive VSA 実験版
+# Jev Adaptive VSA 实验版
 
 [English](JEV_ADAPTIVE.en.md)
 
-開発ブランチ `exp/jev-adaptive-vsa`。安定版の高速化を保証するリリースではありません。このページの検証対象は **layer_v5 / 4step** です。固定5%の212.20秒に対し、最新方式は219.15秒。180秒未満・固定5%相当の品質という目標は未達です。[実測と制限](docs/experiments/README.md)。
+开发分支 `exp/jev-adaptive-vsa`。这不是保证稳定版加速效果的发布版本。本页的验证对象是 **layer_v5 / 4step**。固定 5% 耗时 212.20 秒，而最新方式为 219.15 秒。"180 秒以内且质量相当于固定 5%" 的目标尚未达成。参见[实测与限制](docs/experiments/README.md)。
 
-## 必要条件と導入
+## 必要条件与安装
 
-1. [README](README.md) の対応ComfyUI・comfy-kitchen・モデル・Gate・事前変換手順を満たしてください。モデル、参照画像、変換済み重みは同梱しません。実験はWindows / RTX4070 12GB、ComfyUI 0.36系の指定環境で検証しました。他環境の互換性を保証しません。
-2. このブランチをComfyUIの `custom_nodes` に配置するか、本ブランチの `setup.bat` で導入してください。同じノードの別コピーを同時に読み込まないでください。セットアップはJevモジュール・資料・例もコピーしますが、SDKは自動インストールしません。
-3. Jevを試す場合のみ、TypeSafeのアカウント/APIキーとSDK専用venvを用意します。固定モードではSDK/APIキー不要です。
+1. 请满足 [README](README.md) 中对应的 ComfyUI、comfy-kitchen、模型、Gate 及预转换步骤的要求。模型、参考图像和已转换的权重不随仓库附带。实验已在 Windows / RTX4070 12GB、ComfyUI 0.36 系的指定环境中验证，不保证其他环境的兼容性。
+2. 请将本分支放入 ComfyUI 的 `custom_nodes` 目录，或使用本分支的 `setup.bat` 安装。请勿同时加载同一节点的另一份副本。安装程序会复制 Jev 模块、文档和示例，但不会自动安装 SDK。
+3. 仅在试用 Jev 时才需要准备 TypeSafe 的账号/API 密钥和 SDK 专用 venv。固定模式不需要 SDK/API 密钥。
 
-取得例（本ブランチがリモートに公開された後に利用可能）：
+获取示例（在本分支发布到远程后可用）：
 
 ```powershell
 git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/sepiablue-ai/ComfyUI-MiniMax-H3-W4A4-VSA.git
 ```
 
-リポジトリ内でSDK専用環境を作成する例（検証時SDK用Pythonは3.10）：
+在仓库内创建 SDK 专用环境的示例（验证时 SDK 使用的 Python 为 3.10）：
 
 ```powershell
 py -3.10 -m venv .venv-jev
 & .\.venv-jev\Scripts\python.exe -m pip install -r requirements-jev.txt
 ```
 
-ComfyUIのPythonやグローバルPythonにSDKを混在させる必要はありません。ワークフローの `sdk_python` に、このvenvの `python.exe` の絶対パスを指定します。空欄はComfyUI自身のPythonを使うため、SDKを別環境に入れた場合は必ず設定してください。
+无需将 SDK 混入 ComfyUI 的 Python 或全局 Python。请在工作流的 `sdk_python` 中指定该 venv 的 `python.exe` 的绝对路径。留空会使用 ComfyUI 自身的 Python，因此如果将 SDK 安装在单独的环境中，请务必进行设置。
 
-## APIキーをファイルに書かず起動する
+## 不把 API 密钥写入文件直接启动
 
-APIキーは**ComfyUIを起動するプロセスの環境変数 `TYPESAFE_API_KEY`** から読みます。ワークフロー、スクリプト、コミット、ログにキーを書かないでください。既に起動済みのComfyUIへ後から設定した環境変数は反映されません。
+API 密钥从**启动 ComfyUI 的进程的环境变量 `TYPESAFE_API_KEY`** 中读取。请勿将密钥写入工作流、脚本、提交或日志中。对已经启动的 ComfyUI 事后设置的环境变量不会生效。
 
-同じPowerShellで非表示入力し、そこから普段のComfyUI起動コマンドを実行します。キーのリテラルはコマンド履歴に残りません。
+在同一个 PowerShell 中以隐藏方式输入，然后从该处执行平时的 ComfyUI 启动命令。密钥明文不会留在命令历史记录中。
 
 ```powershell
 $jevSecret = Read-Host 'TypeSafe API key' -AsSecureString
@@ -43,23 +43,23 @@ try {
     $jevSecret.Dispose()
     Remove-Variable jevPointer, jevSecret
 }
-# このシェルから普段のComfyUI起動コマンドを実行する。
-# 利用後、親シェルに残る値も削除する：
+# 从此 shell 执行平时的 ComfyUI 启动命令。
+# 使用后，同时删除残留在父 shell 中的值：
 # Remove-Item Env:TYPESAFE_API_KEY
 ```
 
-コードはキー・HTTPヘッダー・SDK例外本文をログに出しません。`[Jev VSA]` ログには特徴量・選択結果・usageを出します。layer_v5は集計した音声/映像活性、sigma、層番号、keep率に加え、実験目的と固定の人物/音声品質に関する説明をTypeSafeへ送信します。生の画像・音声・モデル重み・APIキーをstateに含めません。
+代码不会将密钥、HTTP 头部、SDK 异常正文输出到日志。`[Jev VSA]` 日志会输出特征量、选择结果和 usage。layer_v5 除了汇总后的音频/视频激活度、sigma、层编号、keep 率之外，还会向 TypeSafe 发送关于实验目的和固定的人物/语音质量的说明。state 中不包含原始图像、音频、模型权重和 API 密钥。
 
-## 比較ワークフロー
+## 对比工作流
 
-- [固定5% / 4step](examples/fixed5_4step.api.json)
+- [固定 5% / 4step](examples/fixed5_4step.api.json)
 - [Jev layer_v5 / 4step](examples/jev_layer_v5_4step.api.json)
 
-これはComfyUI **API形式**です。通常のGUIワークフローとは異なります。参照画像3枚を各自用意し、LoadImageノード901〜903の名前を変更するか、`ComfyUI/input/jev_reference_01.png`〜`03.png` に配置してください。順序は全身・上半身・顔。同一人物の参照を両条件で共有します。画像配布権は利用者が確認してください。
+这些是 ComfyUI **API 格式**，与普通的 GUI 工作流不同。请各自准备 3 张参考图像，修改 LoadImage 节点 901〜903 的名称，或将图像放入 `ComfyUI/input/jev_reference_01.png`〜`03.png`。顺序为全身、上半身、脸部。两种条件共用同一人物的参考图像。图像的发布权请使用者自行确认。
 
-node127のモデル・変換キャッシュ、119/120のVAE、128のText Encoderが手元の名称と一致することを確認してください。モデルを変更した結果は掲載実測の再現とは区別してください。外部ノードはKJNodesのChunkFFNとMotionCache-FastVAEのFastVAEを使用します。MotionCacheによる出力再利用は使いません。
+请确认 node127 的模型与转换缓存、119/120 的 VAE、128 的 Text Encoder 与你本地的名称一致。更换模型后的结果请与文中刊载的实测复现区分开。外部节点使用 KJNodes 的 ChunkFFN 和 MotionCache-FastVAE 的 FastVAE。不使用 MotionCache 的输出复用。
 
-PowerShellから稼働中の専用ComfyUIに1回投入する例：
+从 PowerShell 向正在运行的专用 ComfyUI 提交一次的示例：
 
 ```powershell
 $jevGraph = Get-Content -Raw -Encoding UTF8 .\examples\jev_layer_v5_4step.api.json | ConvertFrom-Json
@@ -68,46 +68,46 @@ $jevBody = @{ prompt = $jevGraph } | ConvertTo-Json -Depth 100
 Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8188/prompt' -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($jevBody))
 ```
 
-ポートは利用環境に合わせて変更してください。返されたprompt_idを控え、ComfyUIで完了を確認します。この例は再試行・ポーリングしません。応答が不明なときは履歴を確認してから再投入してください。生成物の保存先は起動時の `--output-directory` で指定します。
+端口请根据使用环境修改。请记下返回的 prompt_id，并在 ComfyUI 中确认完成。此示例不会重试或轮询。响应不明确时，请先查看历史记录再重新提交。生成物的保存位置通过启动时的 `--output-directory` 指定。
 
-固定版は読み込むファイルを変更するだけです。ノード900のmode=fixedなら追加統計・API通信はありません。両版で1024×1792、124f、24fps、seed43、4step、res_multistep/simple、sigma12/3を維持します。参照やプロンプトの変更は両版で揃えてください。
+固定版只需更改读取的文件即可。节点 900 为 mode=fixed 时，不会有附加统计和 API 通信。两个版本均保持 1024×1792、124f、24fps、seed43、4step、res_multistep/simple、sigma12/3。参考图像和提示词的修改请在两个版本中保持一致。
 
-## 最新方策 layer_v5
+## 最新策略 layer_v5
 
-全50層×4stepを実行。最初のstepは全層5%、以後もblock0とblock1を保護。Jevが層の重要度3段階と全体予算2.5/3/3.5%を選択します。確率から優先順位を作り、ホスト側で予算内に配分します。
+执行全部 50 层 × 4step。第一个 step 所有层均为 5%，之后也保护 block0 和 block1。Jev 选择层重要度的 3 个等级和整体预算 2.5/3/3.5%。根据概率生成优先级，并在宿主侧于预算内进行分配。
 
-| 層 | 低 / 基準 / 高 keep率 |
+| 层 | 低 / 基准 / 高 keep 率 |
 |---|---|
-| 浅い層 | 2 / 5 / 7.5% |
-| 中間層 | 1 / 5 / 7.5% |
-| 最後5層 | 3 / 5 / 10% |
+| 浅层 | 2 / 5 / 7.5% |
+| 中间层 | 1 / 5 / 7.5% |
+| 最后 5 层 | 3 / 5 / 10% |
 
-ブロック入出力差、モダリティ別順位、前stepとの差、ゲート統計を使います。注意機構を疎化した場合の誤差や品質そのものを測った値ではありません。APIはstep境界で最大3 HTTPリクエスト（各50問）、最終step後は呼びません。SDKモデルはjev-1.13.0、リトライ0回。
+使用块输入输出差、各模态的排名、与前一个 step 的差异以及门控统计。这些并不是测量注意力机制稀疏化时的误差或质量本身的数值。API 在 step 边界最多发起 3 个 HTTP 请求（各 50 问），最后一个 step 之后不再调用。SDK 模型为 jev-1.13.0，重试 0 次。
 
-推奨する検証設定：policy=layer_v5、mode=jev_adaptive、keep_percent=5、api_timeout=20、min_confidence=0.4、max_requests=3、producer_chunk=4096。layer_v5では初回5%が方策に組み込まれており、keep_percentで変更できません。
+推荐的验证设置：policy=layer_v5、mode=jev_adaptive、keep_percent=5、api_timeout=20、min_confidence=0.4、max_requests=3、producer_chunk=4096。在 layer_v5 中，首次 5% 已内置在策略中，无法通过 keep_percent 更改。
 
-予算confidenceが閾値未満なら保守的な3.5%予算。API失敗/不正回答では次stepを全5%に戻し、以降その生成中のAPIを停止。予算上限/観測不足でも全5%。confidenceは品質保証の確率ではありません。4step以外はエラーです。未対応samplerは共通wrapperの旧仕様により固定10%・API0回になるため、res_multistepを指定してください。
+若预算 confidence 低于阈值，则采用保守的 3.5% 预算。API 失败/返回无效回答时，将下一个 step 恢复为全部 5%，并在此后该生成过程中停止 API 调用。达到预算上限/观测不足时也为全部 5%。confidence 并非质量保证的概率。除 4step 以外会报错。未支持的 sampler 会因通用 wrapper 的旧规格而变为固定 10%、API 调用 0 次，因此请指定 res_multistep。
 
-## 残している旧方策
+## 保留的旧策略
 
-| policy | 初回・判断対象 | 失敗時 |
+| policy | 首次及判断对象 | 失败时 |
 |---|---|---|
-| gate_v1 | 初回10%、最初のゲート標本からstep全体を選択 | 10% |
-| av_v2 | 初回5%、3深度の音声/映像ゲートからstep全体を選択 | 10% |
-| block_v3 | 設定keep、block0以外のidentity省略を選択 | 全層実行・keep維持 |
-| layer_v4 | 初回5%、各層の割合を独立選択 | 全層5% |
-| layer_v5 | 初回5%、層別重要度と全体予算 | 上記参照 |
+| gate_v1 | 首次 10%，从最初的门控样本中选择整个 step | 10% |
+| av_v2 | 首次 5%，从 3 层深度的音频/视频门控中选择整个 step | 10% |
+| block_v3 | 按设置的 keep，选择对 block0 以外省略 identity | 执行全部层并维持 keep |
+| layer_v4 | 首次 5%，独立选择各层的比例 | 全部层 5% |
+| layer_v5 | 首次 5%，按层重要度和整体预算 | 参见上文 |
 
-block_v3は人物再現性が崩れた試作で、今回の入口ではありません。producer_chunk=8192は有意な高速化を確認できず、16384は未検証。既定4096を使ってください。
+block_v3 是人物再现性被破坏的试作方案，并非此次的入口。producer_chunk=8192 未确认到明显的加速效果，16384 尚未验证。请使用默认的 4096。
 
-## オフラインテスト
+## 离线测试
 
-ComfyUIのtorchがあるPythonで実行します。APIキー不要、GPU生成・有料API呼び出しなし。
+使用装有 ComfyUI 的 torch 的 Python 执行。不需要 API 密钥，不涉及 GPU 生成和付费 API 调用。
 
 ```powershell
 & 'C:\path\to\ComfyUI-venv\Scripts\python.exe' -B test_adaptive.py
 ```
 
-test_sdk_transport.pyはSDK・httpx2・torchを同時にimportできるテスト環境が必要です。標準のSDK専用venvにtorchを追加する必要はなく、通常の導入にこの補助テストは必須ではありません。模擬503/timeoutを使い、外部API0回です。
+test_sdk_transport.py 需要一个能同时 import SDK、httpx2 和 torch 的测试环境。无需在标准的 SDK 专用 venv 中添加 torch，常规安装也不要求这个辅助测试。它使用模拟的 503/timeout，外部 API 调用为 0 次。
 
-コードのライセンスは既存GPL-3.0-only。モデル、参照素材、生成物、外部サービスの利用条件は別です。
+代码的许可证为现有的 GPL-3.0-only。模型、参考素材、生成物和外部服务的使用条款另计。

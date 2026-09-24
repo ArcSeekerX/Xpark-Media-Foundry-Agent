@@ -453,7 +453,7 @@
     },
     {
       "run": "run16",
-      "label": "層別独立 v4",
+      "label": "分层独立 v4",
       "generation_seconds": 219.31888569999865,
       "steady_step_2_to_4_seconds_excluding_decisions": 35.58859033333333,
       "sampler_node_seconds": 163.45783110000048,
@@ -673,7 +673,7 @@
     },
     {
       "run": "run17",
-      "label": "予算選択・閾値退避",
+      "label": "预算选择·阈值退避",
       "generation_seconds": 222.64432630000374,
       "steady_step_2_to_4_seconds_excluding_decisions": 36.316623666666665,
       "sampler_node_seconds": 165.9858447000006,
@@ -893,7 +893,7 @@
     },
     {
       "run": "run18",
-      "label": "層別予算 v5",
+      "label": "分层预算 v5",
       "generation_seconds": 219.14952489999996,
       "steady_step_2_to_4_seconds_excluding_decisions": 35.22381033333333,
       "sampler_node_seconds": 162.7174903999985,
