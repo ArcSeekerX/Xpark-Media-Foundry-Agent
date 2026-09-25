@@ -1,0 +1,163 @@
+import type { EngineType } from '@/types/metrics'
+
+const KIB = 1024
+const MIB = 1024 * 1024
+const GIB = 1024 * 1024 * 1024
+
+/** Format bytes to human-readable with auto-scaling: KB (<1MB), MB (<1GB), GB (>=1GB).
+ *  Uses binary scaling (1024) under the conventional "GB" labels, matching `free -h`,
+ *  `htop`, macOS, and Windows. */
+export function formatBytes(bytes: number): string {
+  if (bytes >= GIB) return `${(bytes / GIB).toFixed(1)} GB`
+  if (bytes >= MIB) return `${(bytes / MIB).toFixed(1)} MB`
+  return `${(bytes / KIB).toFixed(1)} KB`
+}
+
+/** Format bytes as binary GiB, labelled "GB" to match OS conventions. */
+export function formatGiB(bytes: number, decimals = 0): string {
+  return `${(bytes / GIB).toFixed(decimals)} GB`
+}
+
+/** Format bytes/sec to human-readable rate string */
+export function formatRate(bytesPerSec: number): string {
+  return `${formatBytes(bytesPerSec)}/s`
+}
+
+/** Format watts with one decimal */
+export function formatWatts(watts: number): string {
+  return `${watts.toFixed(1)} W`
+}
+
+/** Format power as "current / limit W" */
+export function formatPower(current: number | null, limit: number | null): string {
+  if (current === null) return 'N/A'
+  const currentStr = `${current.toFixed(1)} W`
+  if (limit === null) return currentStr
+  return `${current.toFixed(1)} W / ${limit.toFixed(1)} W`
+}
+
+/** Format temperature as integer with " C" suffix */
+export function formatTemp(celsius: number | null): string {
+  if (celsius === null) return 'N/A'
+  return `${Math.round(celsius)} C`
+}
+
+/** Format percentage as integer with "%" suffix */
+export function formatPercent(value: number | null): string {
+  if (value === null) return 'N/A'
+  return `${Math.round(value)}%`
+}
+
+/** Format clock speed as integer with " MHz" suffix */
+export function formatMhz(mhz: number | null): string {
+  if (mhz === null) return 'N/A'
+  return `${Math.round(mhz)} MHz`
+}
+
+/** Get temperature color class: green <70, yellow 70-85, red >85 */
+export function tempColor(celsius: number | null): string {
+  if (celsius === null) return 'text-zinc-500'
+  if (celsius >= 85) return 'text-red-500'
+  if (celsius >= 70) return 'text-yellow-500'
+  return 'text-green-500'
+}
+
+// --- LLM Engine Formatting Functions (Phase 2) ---
+
+/** Format tokens per second with compact notation (K/M/B). Null -> 'N/A'. */
+export function formatTps(tps: number | null): string {
+  if (tps === null || !Number.isFinite(tps) || tps < 0) return 'N/A'
+  if (tps < 1000) return tps.toFixed(1)
+  const units = [
+    { value: 1e12, suffix: 'T' },
+    { value: 1e9, suffix: 'B' },
+    { value: 1e6, suffix: 'M' },
+    { value: 1e3, suffix: 'K' },
+  ]
+  const unit = units.find(u => tps >= u.value)
+  if (!unit) return tps.toFixed(1)
+  const scaled = tps / unit.value
+  const text = scaled.toFixed(1).replace(/\.0$/, '')
+  return `${text}${unit.suffix}`
+}
+
+/** Format time to first token in milliseconds: integer. Null -> 'N/A'. Per UI-SPEC: unit is "ms" */
+export function formatTtft(ms: number | null): string {
+  if (ms === null) return 'N/A'
+  return Math.round(ms).toString()
+}
+
+/** Auto-scale a duration given in ms to the most readable unit. Returns { value, unit }. */
+export function formatDurationMs(ms: number | null): { value: string; unit: string } {
+  if (ms === null) return { value: 'N/A', unit: '' }
+  if (ms >= 60_000) return { value: (ms / 60_000).toFixed(1), unit: 'min' }
+  if (ms >= 1_000) return { value: (ms / 1_000).toFixed(2), unit: 's' }
+  return { value: Math.round(ms).toString(), unit: 'ms' }
+}
+
+/** Format the value portion of an auto-scaled duration (for BigNumberSparkline format prop). */
+export function formatDurationValue(ms: number): string {
+  return formatDurationMs(ms).value
+}
+
+/** Get the unit string for an auto-scaled duration. */
+export function formatDurationUnit(ms: number | null): string {
+  return formatDurationMs(ms).unit
+}
+
+/** Format request counts: "3 active / 1 queued". Both null -> 'N/A'. Per UI-SPEC. */
+export function formatRequests(active: number | null, queued: number | null): string {
+  if (active === null && queued === null) return 'N/A'
+  const parts: string[] = []
+  if (active !== null) parts.push(`${active} active`)
+  if (queued !== null) parts.push(`${queued} queued`)
+  return parts.join(' / ')
+}
+
+/** Format KV cache percentage: integer with %. Null -> 'N/A'. Per UI-SPEC. */
+export function formatKvCache(percent: number | null): string {
+  if (percent === null) return 'N/A'
+  return `${Math.round(percent)}%`
+}
+
+/** Abbreviate a large cumulative count: 950 -> "950", 1234 -> "1.2K",
+ *  3.4e9 -> "3.4B". One decimal above 1000, trailing ".0" trimmed.
+ *  Null/negative -> '--'. Used for lifetime token totals. */
+export function formatCompactTokens(n: number | null): string {
+  if (n === null || !Number.isFinite(n) || n < 0) return '--'
+  if (n < 1000) return String(Math.round(n))
+  const units = [
+    { value: 1e12, suffix: 'T' },
+    { value: 1e9, suffix: 'B' },
+    { value: 1e6, suffix: 'M' },
+    { value: 1e3, suffix: 'K' },
+  ]
+  const unit = units.find(u => n >= u.value)
+  if (!unit) return String(Math.round(n))
+  const scaled = n / unit.value
+  const text = scaled.toFixed(1).replace(/\.0$/, '')
+  return `${text}${unit.suffix}`
+}
+
+/** Format mean acceptance length (accepted tokens per draft attempt): two
+ *  decimals, e.g. "3.42". Null/non-finite/negative -> '--'. */
+export function formatAcceptanceLength(n: number | null): string {
+  if (n === null || !Number.isFinite(n) || n < 0) return '--'
+  return n.toFixed(2)
+}
+
+/** Label for an engine's GPU badge: "GPU 0", or "GPU 0+1" when the engine
+ *  spans multiple GPUs (tensor parallel). Empty string when no indexes are
+ *  known — callers hide the badge entirely in that case. */
+export function formatGpuIndexes(indexes: number[]): string {
+  if (indexes.length === 0) return ''
+  return `GPU ${indexes.join('+')}`
+}
+
+/** Map EngineType enum to human-readable display name. */
+export function engineDisplayName(engineType: EngineType): string {
+  const names: Record<EngineType, string> = {
+    Vllm: 'vLLM',
+  }
+  return names[engineType]
+}

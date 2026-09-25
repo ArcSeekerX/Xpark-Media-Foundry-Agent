@@ -1,0 +1,410 @@
+import { useState } from 'react'
+import { ArcGauge, type GaugeSegment } from '@/components/gauges/ArcGauge'
+import { HBar } from '@/components/gauges/HBar'
+import { CoreHeatmap } from '@/components/charts/CoreHeatmap'
+import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
+import { RemoteClusterPanel } from './RemoteClusterPanel'
+import { useElementSize } from '@/hooks/useElementSize'
+import { THRESHOLDS } from '@/lib/theme'
+import { formatBytes, formatGiB, formatMhz, formatRate } from '@/lib/format'
+import { computePowerScale, powerPeak } from '@/lib/gpuPower'
+import type { MetricsSnapshot } from '@/types/metrics'
+import type { GpuEvent, InferenceRequest } from '@/types/events'
+
+interface DashboardProps {
+  metrics: MetricsSnapshot | null
+  history: {
+    getChartData: (metric: string) => Array<{ timestamp: number; value: number }>
+    getSparklineData: (metric: string, count?: number) => number[]
+    getRemoteChartData: (ip: string, metric: string) => Array<{ timestamp: number; value: number }>
+  }
+  events: GpuEvent[]
+  requests: InferenceRequest[]
+}
+
+function HwCard({ title, subtitle, children }: { title?: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-[#111115] rounded-md sm:rounded-lg border border-white/[0.04] px-1.5 pt-1 pb-0.5 lg:px-2 lg:pt-1.5 lg:pb-1 2xl:px-2.5 2xl:pt-2 2xl:pb-1.5 flex flex-col min-h-0 min-w-0 overflow-hidden transition-colors duration-200 hover:border-[#76B900]/10">
+      {(title || subtitle) && (
+        <div className="mb-0.5 2xl:mb-1 flex items-baseline gap-1.5 min-w-0 shrink-0">
+          {title && <span className="text-[10px] lg:text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-200 tracking-tight shrink-0">{title}</span>}
+          {title && subtitle && <span className="text-zinc-600 shrink-0 hidden lg:inline">·</span>}
+          {subtitle && <span className="hidden lg:inline text-[10px] 2xl:text-[11px] min-[1920px]:text-xs text-zinc-400 truncate min-w-0" title={subtitle}>{subtitle}</span>}
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
+/** Shared responsive height for hardware mini-charts and gauges. */
+const HW_CHART_HEIGHT = 'clamp(28px, 7vh, 140px)'
+const HW_GAUGE_PX = 'clamp(36px, 5vw, 96px)'
+
+/** Number of hardware cards in the grid. */
+const HW_CARD_COUNT = 8
+/** Below this per-card height (px) the cards drop their line charts and swap
+ *  square gauges for compact horizontal bars. */
+const HW_COMPACT_HEIGHT_PX = 124
+
+export function Dashboard({
+  metrics,
+  history,
+  events,
+  requests,
+}: DashboardProps) {
+  const [selectedGpuIndex, setSelectedGpuIndex] = useState(0)
+
+  const [hwGridRef, hwGridSize] = useElementSize<HTMLDivElement>()
+  const hwCols = hwGridSize.width >= 640 ? 4 : 2
+  const hwRows = Math.ceil(HW_CARD_COUNT / hwCols)
+  const perCardHeight =
+    hwGridSize.height > 0 ? (hwGridSize.height - (hwRows - 1) * 6) / hwRows : 0
+  const compact = perCardHeight > 0 && perCardHeight < HW_COMPACT_HEIGHT_PX
+
+  if (!metrics) return null
+  if (!metrics.memory || !metrics.disk) return null
+
+  // Cluster mode: once peer nodes are monitored, the cluster panel (aggregate
+  // strip + node selector) becomes the main view and replaces the local
+  // hardware overview, so only one node's details are ever shown at a time.
+  const remoteNodes = metrics.remote_nodes ?? []
+  const clusterMode = remoteNodes.length > 0
+
+  const gpus = metrics.gpus && metrics.gpus.length > 0 ? metrics.gpus : (metrics.gpu ? [metrics.gpu] : [])
+  const multiGpu = gpus.length > 1
+  const gpuIndexOf = (gpu: MetricsSnapshot['gpu']) => gpu.index ?? 0
+  const activeGpu = gpus.find((g) => gpuIndexOf(g) === selectedGpuIndex) ?? gpus[0] ?? {}
+  const activeGpuIndex = gpuIndexOf(activeGpu)
+  const gpuMetricKey = (metric: string) => (multiGpu ? `gpu:${activeGpuIndex}:${metric}` : metric)
+  const gpuName = activeGpu.name ?? undefined
+  const gpuSubtitle = multiGpu ? `GPU ${activeGpuIndex}${gpuName ? ` · ${gpuName}` : ''}` : gpuName
+
+  const powerHistory = history.getChartData(gpuMetricKey('gpuPower'))
+  const powerPercent = computePowerScale(
+    activeGpu.power_watts,
+    activeGpu.power_limit_watts,
+    powerPeak(powerHistory, activeGpu.power_watts),
+  ).percent
+
+  const memUsedPercent = metrics.memory.total_bytes > 0
+    ? (metrics.memory.used_bytes / metrics.memory.total_bytes) * 100
+    : 0
+
+  const diskUsedPercent = metrics.disk.total_bytes > 0
+    ? (metrics.disk.used_bytes / metrics.disk.total_bytes) * 100
+    : 0
+
+  const gpuUsed = metrics.memory.gpu_estimated_bytes ?? 0
+  const cpuUsed = Math.max(0, metrics.memory.used_bytes - gpuUsed)
+  const cached = Math.min(metrics.memory.cached_bytes, metrics.memory.available_bytes)
+  const free = Math.max(0, metrics.memory.available_bytes - cached)
+  const totalGB = formatGiB(metrics.memory.display_total_bytes ?? metrics.memory.total_bytes)
+
+  const memorySegments: GaugeSegment[] = [
+    { value: gpuUsed, total: metrics.memory.total_bytes, color: '#76B900', label: `GPU: ${formatBytes(gpuUsed)}` },
+    { value: cpuUsed, total: metrics.memory.total_bytes, color: '#3B82F6', label: `CPU: ${formatBytes(cpuUsed)}` },
+    { value: cached, total: metrics.memory.total_bytes, color: '#71717A', label: `Cache: ${formatBytes(cached)}` },
+    { value: free, total: metrics.memory.total_bytes, color: '#27272A', label: `Free: ${formatBytes(free)}` },
+  ]
+
+  const activeGpuChartEvents = events
+    .filter(e => e.gpu_index === undefined || e.gpu_index === null || e.gpu_index === activeGpuIndex)
+    .map(e => ({ timestamp: e.timestamp_ms, type: e.event_type, detail: e.detail }))
+  const requestSpans = requests.map(r => ({
+    start: r.start_ms, end: r.end_ms, tps: r.tps, ttft: r.ttft_ms,
+  }))
+
+  const sumSeries = (
+    a: Array<{ timestamp: number; value: number }>,
+    b: Array<{ timestamp: number; value: number }>,
+  ): Array<{ timestamp: number; value: number }> => {
+    const map = new Map<number, number>()
+    for (const p of a) map.set(p.timestamp, p.value)
+    for (const p of b) map.set(p.timestamp, (map.get(p.timestamp) ?? 0) + p.value)
+    return Array.from(map.entries())
+      .sort((x, y) => x[0] - y[0])
+      .map(([timestamp, value]) => ({ timestamp, value }))
+  }
+
+  const diskRead = history.getChartData('diskRead')
+  const diskWrite = history.getChartData('diskWrite')
+  const diskTotal = sumSeries(diskRead, diskWrite)
+  const networkRx = history.getChartData('networkRx')
+  const networkTx = history.getChartData('networkTx')
+  const networkTotal = sumSeries(networkRx, networkTx)
+
+  const DISK_READ_COLOR = '#76B900'
+  const DISK_WRITE_COLOR = '#F59E0B'
+  const TOTAL_COLOR = '#A1A1AA'
+  const NET_RX_COLOR = '#3B82F6'
+  const NET_TX_COLOR = '#A855F7'
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* ── Remote xpark cluster — 本机 + SSH-polled peer node status.
+          A 本机-only host gets just the slim toolbar; once peers are
+          monitored this panel fills the view (cluster summary + node
+          selector) in place of the hardware overview below. */}
+      <RemoteClusterPanel
+        nodes={remoteNodes}
+        metrics={metrics}
+        getLocalChartData={history.getChartData}
+        getRemoteChartData={history.getRemoteChartData}
+        fill={clusterMode}
+      />
+
+      {/* ── Hardware Overview — 本机's detailed system metrics, the main
+          content only when no remote nodes are monitored ── */}
+      {!clusterMode && (
+      <div className="flex-1 min-h-0 bg-[#0a0a0d]/80 rounded-xl border border-white/[0.03] p-1 lg:p-1.5 2xl:p-2 flex flex-col">
+        {multiGpu && (
+          <div role="group" aria-label="GPU selector" className="shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-1 lg:gap-1.5 mb-1 lg:mb-1.5">
+            {gpus.map((gpu) => {
+              const isActive = gpuIndexOf(gpu) === activeGpuIndex
+              return (
+                <button
+                  key={gpu.index ?? 'primary'}
+                  type="button"
+                  onClick={() => setSelectedGpuIndex(gpuIndexOf(gpu))}
+                  aria-pressed={isActive}
+                  className={`min-w-0 rounded-md border px-2 py-1 text-left cursor-pointer transition-colors duration-150 ${
+                    isActive
+                      ? 'border-[#76B900]/50 bg-[#76B900]/[0.06]'
+                      : 'border-white/[0.04] bg-[#151519] hover:border-white/[0.12]'
+                  }`}
+                >
+                  <div className="flex items-baseline justify-between gap-2 min-w-0">
+                    <span className="text-[10px] lg:text-[11px] font-semibold text-zinc-200 truncate">
+                      {gpu.index !== null && gpu.index !== undefined ? `GPU ${gpu.index}` : 'GPU'}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 truncate">{gpu.name}</span>
+                  </div>
+                  <div className="mt-0.5 grid grid-cols-3 gap-2 text-[10px] lg:text-[11px] font-mono tabular-nums text-zinc-300">
+                    <span>{gpu.utilization_percent ?? 0}%</span>
+                    <span>{gpu.temperature_celsius ?? 0}C</span>
+                    <span>{gpu.power_watts !== null ? `${Math.round(gpu.power_watts)}W` : '--'}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div ref={hwGridRef} className="flex-1 min-h-0 grid grid-cols-2 sm:grid-cols-4 gap-1 lg:gap-1.5 auto-rows-fr">
+
+          {/* GPU Utilization */}
+          <HwCard title="GPU Utilization" subtitle={gpuSubtitle}>
+            {compact ? (
+              <HBar value={activeGpu.utilization_percent ?? 0} label="GPU Util" unit="%" />
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 min-h-0 flex-1 overflow-hidden">
+                <ArcGauge value={activeGpu.utilization_percent ?? 0} label="GPU Util" unit="%" size={HW_GAUGE_PX} />
+                <div className="flex-1 min-w-0">
+                  <TimeSeriesChart data={history.getChartData(gpuMetricKey('gpuUtil'))} yDomain={[0, 100]} unit="%" events={activeGpuChartEvents} requests={requestSpans} height={HW_CHART_HEIGHT} />
+                </div>
+              </div>
+            )}
+          </HwCard>
+
+          {/* GPU Temperature */}
+          <HwCard title="GPU Temp" subtitle={gpuSubtitle}>
+            {compact ? (
+              <HBar value={activeGpu.temperature_celsius ?? 0} label="GPU Temp" unit="°C" thresholds={THRESHOLDS.gpuTemp} />
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 min-h-0 flex-1 overflow-hidden">
+                <ArcGauge value={activeGpu.temperature_celsius ?? 0} label="GPU Temp" unit="°C" thresholds={THRESHOLDS.gpuTemp} size={HW_GAUGE_PX} />
+                <div className="flex-1 min-w-0">
+                  <TimeSeriesChart data={history.getChartData(gpuMetricKey('gpuTemp'))} yDomain={[0, 100]} unit="°C" height={HW_CHART_HEIGHT} />
+                </div>
+              </div>
+            )}
+          </HwCard>
+
+          {/* GPU Power */}
+          <HwCard title="GPU Power" subtitle={gpuSubtitle}>
+            {compact ? (
+              <HBar
+                value={powerPercent}
+                label="GPU Power"
+                unit="W"
+                thresholds={THRESHOLDS.gpuPower}
+                displayValue={activeGpu.power_watts !== null ? Math.round(activeGpu.power_watts) : 0}
+              />
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 min-h-0 flex-1 overflow-hidden">
+                <div className="flex flex-col items-center justify-center shrink-0" style={{ width: HW_GAUGE_PX, height: HW_GAUGE_PX }}>
+                  <span className="text-sm 2xl:text-base min-[1920px]:text-lg font-bold text-zinc-100 font-mono tabular-nums">
+                    {activeGpu.power_watts !== null ? `${Math.round(activeGpu.power_watts)} W` : '--'}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <TimeSeriesChart data={powerHistory} unit="W" height={HW_CHART_HEIGHT} />
+                </div>
+              </div>
+            )}
+          </HwCard>
+
+          {/* GPU Clock */}
+          <HwCard title="GPU Clock" subtitle={gpuSubtitle}>
+            {compact ? (
+              <div className="flex items-baseline justify-between gap-2 min-w-0">
+                <span className="text-[9px] lg:text-[10px] text-zinc-400 uppercase tracking-wider truncate">Graphics</span>
+                <span className="ml-auto shrink-0 text-xs lg:text-sm 2xl:text-base font-bold text-zinc-100 font-mono tabular-nums">{formatMhz(activeGpu.clock_graphics_mhz)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 min-h-0 flex-1 overflow-hidden">
+                <div className="flex flex-col items-center justify-center shrink-0" style={{ width: HW_GAUGE_PX, height: HW_GAUGE_PX }}>
+                  <span className="text-sm 2xl:text-base min-[1920px]:text-lg font-bold text-zinc-100 font-mono">{formatMhz(activeGpu.clock_graphics_mhz)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <TimeSeriesChart data={history.getChartData(gpuMetricKey('gpuClockGraphics'))} unit="MHz" height={HW_CHART_HEIGHT} />
+                </div>
+              </div>
+            )}
+          </HwCard>
+
+          {/* CPU */}
+          <HwCard title="CPU" subtitle={metrics.cpu.name ?? undefined}>
+            {compact ? (
+              <HBar value={metrics.cpu?.aggregate_percent ?? 0} label="CPU" unit="%" thresholds={THRESHOLDS.cpuUsage} />
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 min-h-0 flex-1 overflow-hidden">
+                <ArcGauge value={metrics.cpu?.aggregate_percent ?? 0} label="CPU" unit="%" thresholds={THRESHOLDS.cpuUsage} size={HW_GAUGE_PX} />
+                <div className="flex-1 min-w-0">
+                  <TimeSeriesChart data={history.getChartData('cpuAggregate')} yDomain={[0, 100]} unit="%" height={HW_CHART_HEIGHT} />
+                </div>
+              </div>
+            )}
+            {!compact && metrics.cpu.per_core.length > 0 && <CoreHeatmap cores={metrics.cpu.per_core} />}
+          </HwCard>
+
+          {/* Memory */}
+          <HwCard title="Memory" subtitle={`${totalGB} Unified`}>
+            {compact ? (
+              <HBar value={memUsedPercent} label="" unit="%" segments={memorySegments} />
+            ) : (
+              <div className="flex items-center justify-center min-h-0 flex-1 overflow-hidden">
+                <ArcGauge value={memUsedPercent} label="" unit="%" segments={memorySegments} size={HW_GAUGE_PX} />
+              </div>
+            )}
+          </HwCard>
+
+          {/* Disk I/O */}
+          <HwCard title="Disk I/O" subtitle={metrics.disk.name ?? undefined}>
+            {compact ? (
+              <div className="flex items-baseline justify-between gap-2 min-w-0 font-mono">
+                <span className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-[9px] lg:text-[10px] text-zinc-500">R</span>
+                  <span className="text-xs lg:text-sm font-bold text-zinc-100 tabular-nums truncate">{formatRate(metrics.disk.read_bytes_per_sec)}</span>
+                </span>
+                <span className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-[9px] lg:text-[10px] text-zinc-500">W</span>
+                  <span className="text-xs lg:text-sm font-bold text-zinc-100 tabular-nums truncate">{formatRate(metrics.disk.write_bytes_per_sec)}</span>
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 min-h-0 flex-1 overflow-hidden">
+                <div className="flex flex-col items-center justify-center gap-0.5 shrink-0" style={{ width: HW_GAUGE_PX, height: HW_GAUGE_PX }}>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[9px] 2xl:text-[10px] min-[1920px]:text-xs text-zinc-500">R</span>
+                    <span className="text-xs 2xl:text-sm min-[1920px]:text-base font-bold text-zinc-100 font-mono">{formatRate(metrics.disk.read_bytes_per_sec)}</span>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[9px] 2xl:text-[10px] min-[1920px]:text-xs text-zinc-500">W</span>
+                    <span className="text-xs 2xl:text-sm min-[1920px]:text-base font-bold text-zinc-100 font-mono">{formatRate(metrics.disk.write_bytes_per_sec)}</span>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <TimeSeriesChart
+                    series={[
+                      { data: diskTotal, label: 'Total', color: TOTAL_COLOR },
+                      { data: diskRead, label: 'Read', color: DISK_READ_COLOR },
+                      { data: diskWrite, label: 'Write', color: DISK_WRITE_COLOR },
+                    ]}
+                    unit="B/s"
+                    height={HW_CHART_HEIGHT}
+                  />
+                </div>
+              </div>
+            )}
+            {/* Disk capacity bar */}
+            {metrics.disk.total_bytes > 0 && (
+              <div className="mt-1.5 pt-1.5 border-t border-white/[0.04]">
+                <div className="flex justify-between text-[10px] text-zinc-600 mb-1">
+                  <span>{metrics.disk.target_name ?? metrics.disk.name ?? 'Disk'}</span>
+                  <span className="flex items-center gap-2 tracking-wide tabular-nums">
+                    <span
+                      className="tabular-nums"
+                      style={{
+                        color: diskUsedPercent > 85
+                          ? '#EF4444' : diskUsedPercent > 70
+                            ? '#F59E0B' : '#76B900',
+                      }}
+                    >
+                      已使用 {diskUsedPercent.toFixed(1)}%
+                    </span>
+                    <span className="text-zinc-700">{formatBytes(metrics.disk.used_bytes)}<span className="mx-2 text-zinc-700">/</span>{formatBytes(metrics.disk.total_bytes)}</span>
+                  </span>
+                </div>
+                <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-1000"
+                    style={{
+                      width: `${Math.min((metrics.disk.used_bytes / metrics.disk.total_bytes) * 100, 100)}%`,
+                      backgroundColor: (metrics.disk.used_bytes / metrics.disk.total_bytes) > 0.85
+                        ? '#EF4444' : (metrics.disk.used_bytes / metrics.disk.total_bytes) > 0.70
+                          ? '#F59E0B' : '#76B900',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </HwCard>
+
+          {/* Network I/O */}
+          <HwCard title="Network" subtitle={metrics.network.name ?? undefined}>
+            {compact ? (
+              <div className="flex items-baseline justify-between gap-2 min-w-0 font-mono">
+                <span className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-[9px] lg:text-[10px] text-zinc-500">RX</span>
+                  <span className="text-xs lg:text-sm font-bold text-zinc-100 tabular-nums truncate">{formatRate(metrics.network.rx_bytes_per_sec)}</span>
+                </span>
+                <span className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-[9px] lg:text-[10px] text-zinc-500">TX</span>
+                  <span className="text-xs lg:text-sm font-bold text-zinc-100 tabular-nums truncate">{formatRate(metrics.network.tx_bytes_per_sec)}</span>
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 min-w-0 min-h-0 flex-1 overflow-hidden">
+                <div className="flex flex-col items-center justify-center gap-0.5 shrink-0" style={{ width: HW_GAUGE_PX, height: HW_GAUGE_PX }}>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[9px] 2xl:text-[10px] min-[1920px]:text-xs text-zinc-500">RX</span>
+                    <span className="text-xs 2xl:text-sm min-[1920px]:text-base font-bold text-zinc-100 font-mono">{formatRate(metrics.network.rx_bytes_per_sec)}</span>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[9px] 2xl:text-[10px] min-[1920px]:text-xs text-zinc-500">TX</span>
+                    <span className="text-xs 2xl:text-sm min-[1920px]:text-base font-bold text-zinc-100 font-mono">{formatRate(metrics.network.tx_bytes_per_sec)}</span>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <TimeSeriesChart
+                    series={[
+                      { data: networkTotal, label: 'Total', color: TOTAL_COLOR },
+                      { data: networkRx, label: 'RX', color: NET_RX_COLOR },
+                      { data: networkTx, label: 'TX', color: NET_TX_COLOR },
+                    ]}
+                    unit="B/s"
+                    height={HW_CHART_HEIGHT}
+                  />
+                </div>
+              </div>
+            )}
+          </HwCard>
+
+        </div>
+      </div>
+      )}
+    </div>
+  )
+}

@@ -26,3 +26,10 @@ validation/
 .env.*
 *.pem
 *.key
+
+# Frontend (apps/web, apps/console)
+apps/web/node_modules/
+apps/web/dist/
+apps/console/node_modules/
+apps/console/dist/
+*.tsbuildinfo

@@ -1,0 +1,247 @@
+export interface MetricsSnapshot {
+  timestamp_ms: number
+  /** Local machine hostname, from the backend (labels the 本机 cluster card). */
+  hostname?: string
+  gpu: GpuMetrics
+  gpus?: GpuMetrics[]
+  cpu: CpuMetrics
+  memory: MemoryMetrics
+  disk: DiskMetrics
+  network: NetworkMetrics
+  engines: EngineSnapshot[]
+  gpu_events: GpuEventData[]
+  remote_nodes?: RemoteNodeStatus[]
+}
+
+/** System status of one remote xpark cluster node, SSH-polled by the backend.
+ *  `online` is false when the last probe failed (node offline/unreachable). */
+export interface RemoteNodeStatus {
+  ip: string
+  hostname: string | null
+  online: boolean
+  error: string | null
+  timestamp_ms: number
+  cpu_percent: number | null
+  /** Per-core CPU utilization (idle-based delta over the probe window). */
+  per_core?: CoreMetrics[]
+  /** CPU core count reported by the remote node (nproc). */
+  cpu_cores?: number | null
+  memory_total_bytes: number | null
+  memory_used_bytes: number | null
+  /** Disk read throughput (all block devices), bytes/sec. */
+  disk_read_bytes_per_sec?: number | null
+  /** Disk write throughput (all block devices), bytes/sec. */
+  disk_write_bytes_per_sec?: number | null
+  /** Network receive throughput (all non-loopback interfaces), bytes/sec. */
+  network_rx_bytes_per_sec?: number | null
+  /** Network transmit throughput (all non-loopback interfaces), bytes/sec. */
+  network_tx_bytes_per_sec?: number | null
+  /** Mount target of the largest real filesystem (e.g. "/"). */
+  disk_target_name?: string | null
+  /** Total capacity of that filesystem, bytes. */
+  disk_total_bytes?: number | null
+  /** Used bytes on that filesystem. */
+  disk_used_bytes?: number | null
+  gpus: GpuMetrics[]
+  /** True when a user-imported SSH credential is stored for this node. */
+  has_credentials?: boolean
+}
+
+/** Wire-format GPU event matching backend GpuEvent struct */
+export interface GpuEventData {
+  timestamp_ms: number
+  gpu_index?: number | null
+  event_type: string
+  detail: string
+}
+
+/** Wire-format per-request inference metrics matching backend RecentRequest struct */
+export interface InferenceRequestData {
+  start_ms: number
+  end_ms: number
+  tokens_per_sec: number
+  ttft_ms: number
+}
+
+export interface GpuMetrics {
+  index?: number | null
+  name: string | null
+  utilization_percent: number | null
+  memory_total_bytes?: number | null
+  memory_used_bytes?: number | null
+  temperature_celsius: number | null
+  power_watts: number | null
+  power_limit_watts: number | null
+  clock_graphics_mhz: number | null
+  clock_sm_mhz: number | null
+  clock_memory_mhz: number | null
+  fan_speed_percent: number | null
+}
+
+export interface CpuMetrics {
+  name: string | null
+  aggregate_percent: number
+  per_core: CoreMetrics[]
+}
+
+export interface CoreMetrics {
+  id: number
+  usage_percent: number
+}
+
+export interface MemoryMetrics {
+  total_bytes: number
+  /** Headline pool size for the UI. On unified-memory systems this is sourced
+   *  from NVML so the marketed capacity (e.g. 128 GB on DGX Spark) is shown
+   *  instead of the kernel-visible total which excludes firmware carve-outs. */
+  display_total_bytes?: number
+  used_bytes: number
+  available_bytes: number
+  cached_bytes: number
+  gpu_estimated_bytes: number | null
+  gpu_memory_total_bytes: number | null
+  gpu_memory_used_bytes: number | null
+  is_unified: boolean
+}
+
+export interface DiskMetrics {
+  name: string | null
+  read_bytes_per_sec: number
+  write_bytes_per_sec: number
+  target_name: string | null
+  total_bytes: number
+  used_bytes: number
+}
+
+export interface NetworkMetrics {
+  name: string | null
+  rx_bytes_per_sec: number
+  tx_bytes_per_sec: number
+}
+
+// --- LLM Engine Types (Phase 2) ---
+
+export type EngineType = 'Vllm'
+
+export type DeploymentMode = 'Docker' | 'Native'
+
+export type EngineStatus =
+  | { type: 'Running' }
+  | { type: 'Loading' }
+  | { type: 'Stopped' }
+  | { type: 'Error'; message: string }
+
+export interface ModelInfo {
+  name: string
+  parameter_size: string | null
+  quantization: string | null
+  precision: string | null
+  tensor_type: string | null
+  model_type: string | null
+  pipeline_tag: string | null
+}
+
+/** Tail-latency percentiles in milliseconds, derived from a Prometheus
+ *  histogram on the backend. Any quantile may be null when there is not
+ *  yet enough data to interpolate. */
+export interface LatencyPercentiles {
+  p50_ms: number | null
+  p95_ms: number | null
+  p99_ms: number | null
+}
+
+/** One Prometheus histogram bucket as shipped by the backend. The
+ *  frontend uses these to recompute goodput at user-customized SLO
+ *  thresholds. The backend replaces `+Inf` with `Number.MAX_VALUE`
+ *  (Rust `f64::MAX`) so the wire format stays valid JSON. */
+export interface HistogramBucket {
+  le_seconds: number
+  cumulative_count: number
+}
+
+export interface EngineMetrics {
+  tokens_per_sec: number | null
+  avg_tokens_per_sec: number | null
+  per_request_tps: number | null
+  ttft_ms: number | null
+  active_requests: number | null
+  queued_requests: number | null
+  kv_cache_percent: number | null
+  kv_cache_is_estimated: boolean
+  total_requests: number | null
+  // --- New metrics ---
+  e2e_latency_ms: number | null
+  prompt_tokens_per_sec: number | null
+  avg_prompt_tokens_per_sec: number | null
+  per_request_prompt_tps: number | null
+  swapped_requests: number | null
+  prefix_cache_hit_rate: number | null
+  queue_time_ms: number | null
+  inter_token_latency_ms: number | null
+  preemptions_total: number | null
+  /** Cumulative prompt (prefill) tokens processed since engine start. */
+  total_prompt_tokens: number | null
+  /** Cumulative generation (decode) tokens produced since engine start. */
+  total_generation_tokens: number | null
+  /** Cumulative count of prefix-cache token queries since engine start. */
+  prefix_cache_queries_total: number | null
+  avg_batch_size: number | null
+  ttft_percentiles: LatencyPercentiles | null
+  itl_percentiles: LatencyPercentiles | null
+  e2e_percentiles: LatencyPercentiles | null
+  /** % of TTFT observations meeting the TTFT SLO threshold. */
+  ttft_goodput_pct: number | null
+  /** % of ITL observations meeting the ITL SLO threshold. */
+  itl_goodput_pct: number | null
+  /** % of E2E observations meeting the E2E SLO threshold. */
+  e2e_goodput_pct: number | null
+  /** Raw TTFT histogram buckets. Used by the frontend to recompute
+   *  goodput at user-customized SLO thresholds. Null while warming up
+   *  or when the engine hasn't emitted the histogram yet. */
+  ttft_buckets: HistogramBucket[] | null
+  /** Raw ITL histogram buckets (cumulative). */
+  itl_buckets: HistogramBucket[] | null
+  /** Raw E2E histogram buckets (cumulative). */
+  e2e_buckets: HistogramBucket[] | null
+  /** Average time per output token during decode (ms) — the gap between
+   *  generating each subsequent token, excluding TTFT. */
+  tpot_ms: number | null
+  /** Tail latency percentiles for time per output token (ms). */
+  tpot_percentiles: LatencyPercentiles | null
+  /** % of TPOT observations meeting the TPOT SLO threshold. */
+  tpot_goodput_pct: number | null
+  /** Raw TPOT histogram buckets (cumulative). */
+  tpot_buckets: HistogramBucket[] | null
+
+  // --- Speculative decoding ---
+  // Populated only when the served model has speculative decoding configured
+  // (vLLM emits `vllm:spec_decode_*` only then). When all are null the UI hides
+  // the speculative-decoding section entirely.
+  /** Cumulative speculatively-generated (draft) tokens. Counts up over the engine's life. */
+  spec_decode_draft_tokens_total: number | null
+  /** Cumulative draft tokens that passed verification. Counts up. */
+  spec_decode_accepted_tokens_total: number | null
+  /** Cumulative number of speculative-decode draft attempts. */
+  spec_decode_drafts_total: number | null
+  /** Lifetime token acceptance rate (TAR), percentage: accepted/draft*100. */
+  spec_decode_acceptance_rate: number | null
+  /** Live (windowed) TAR from per-poll deltas, percentage. Fluctuates with recent traffic. */
+  spec_decode_acceptance_rate_live: number | null
+  /** Mean accepted tokens per draft attempt: accepted/drafts. */
+  spec_decode_mean_acceptance_length: number | null
+}
+
+export interface EngineSnapshot {
+  engine_type: EngineType
+  endpoint: string
+  status: EngineStatus
+  model: ModelInfo | null
+  metrics: EngineMetrics | null
+  recent_requests: InferenceRequestData[]
+  deployment_mode: DeploymentMode
+  /** Indexes of the GPU(s) the engine was observed running on (NVML
+   *  compute-process match on the backend). Empty = unknown; the UI shows
+   *  the badge only on multi-GPU hosts. The backend always serializes the
+   *  field — optional only so snapshots from older backends still parse. */
+  gpu_indexes?: number[]
+}

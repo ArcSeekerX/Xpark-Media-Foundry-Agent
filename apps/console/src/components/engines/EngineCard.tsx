@@ -1,0 +1,419 @@
+import { TimeSeriesChart, type ChartSeries } from '@/components/charts/TimeSeriesChart'
+import { formatTps, formatTtft, formatDurationMs } from '@/lib/format'
+import type { EngineSnapshot } from '@/types/metrics'
+import type { InferenceRequest } from '@/types/events'
+import {
+  type ChartDataPoint,
+  type Trend,
+  MetricTile,
+  LiveWithTotal,
+  KvBar,
+  TrendArrow,
+  GoodputTile,
+  SpecDecodeSection,
+  computeTrend,
+  fmtVal,
+  fmtInt,
+} from './EngineCardPrimitives'
+import { type LatencyMode, latencyModeLabel, pickLatencyValue } from './LatencyModeControl'
+import { combinedGoodput, recomputeGoodputPct } from '@/lib/slo'
+import { useSloSettings } from '@/hooks/useSloSettings'
+import { SloSettingsControl } from './SloSettingsControl'
+
+/** Render an E2E threshold in seconds when it's a clean multiple of 1000ms,
+ *  otherwise fall through to milliseconds. Keeps the default "5s" label
+ *  intact while supporting user-tuned values like 2500ms ("2.5s") or 800ms.
+ */
+function formatE2eLabel(e2eMs: number): string {
+  if (e2eMs >= 1000) {
+    const seconds = e2eMs / 1000
+    const formatted = Number.isInteger(seconds) ? seconds.toString() : seconds.toFixed(1)
+    return `${formatted}s`
+  }
+  return `${e2eMs}ms`
+}
+
+function decodeTokenSeries(chartData: {
+  tps: ChartDataPoint[]
+  avgTps: ChartDataPoint[]
+  perReqTps: ChartDataPoint[]
+}): ChartSeries[] {
+  return [
+    { data: chartData.tps, label: 'Live', color: '#76B900' },
+    { data: chartData.avgTps, label: 'Avg', color: '#3b82f6' },
+    { data: chartData.perReqTps, label: 'Per-Req', color: '#a855f7' },
+  ]
+}
+
+function prefillTokenSeries(chartData: {
+  promptTps: ChartDataPoint[]
+  avgPromptTps: ChartDataPoint[]
+  perReqPromptTps: ChartDataPoint[]
+}): ChartSeries[] {
+  return [
+    { data: chartData.promptTps, label: 'Live', color: '#76B900' },
+    { data: chartData.avgPromptTps, label: 'Avg', color: '#3b82f6' },
+    { data: chartData.perReqPromptTps, label: 'Per-Req', color: '#a855f7' },
+  ]
+}
+
+interface EngineCardProps {
+  engine: EngineSnapshot
+  tpsHistory?: number[]
+  ttftHistory?: number[]
+  kvHistory?: number[]
+  showCharts?: boolean
+  chartData?: {
+    tps: ChartDataPoint[]
+    avgTps: ChartDataPoint[]
+    perReqTps: ChartDataPoint[]
+    ttft: ChartDataPoint[]
+    kv: ChartDataPoint[]
+    prefixCacheHit: ChartDataPoint[]
+    e2eLatency: ChartDataPoint[]
+    promptTps: ChartDataPoint[]
+    avgPromptTps: ChartDataPoint[]
+    perReqPromptTps: ChartDataPoint[]
+    queueTime: ChartDataPoint[]
+    interTokenLatency: ChartDataPoint[]
+    batchSize: ChartDataPoint[]
+    ttftP50: ChartDataPoint[]
+    ttftP95: ChartDataPoint[]
+    ttftP99: ChartDataPoint[]
+    itlP50: ChartDataPoint[]
+    itlP95: ChartDataPoint[]
+    itlP99: ChartDataPoint[]
+    e2eP50: ChartDataPoint[]
+    e2eP95: ChartDataPoint[]
+    e2eP99: ChartDataPoint[]
+    tpot: ChartDataPoint[]
+    tpotP50: ChartDataPoint[]
+    tpotP95: ChartDataPoint[]
+    tpotP99: ChartDataPoint[]
+    activeRequests: ChartDataPoint[]
+    queuedRequests: ChartDataPoint[]
+    totalRequests: ChartDataPoint[]
+  }
+  requests?: InferenceRequest[]
+  latencyMode?: LatencyMode
+}
+
+export function EngineCard({
+  engine,
+  showCharts = false,
+  chartData,
+  requests,
+  latencyMode = 'avg',
+}: EngineCardProps) {
+  const noModel = engine.model === null
+  const isWaitingForMetrics = engine.metrics === null
+    && (engine.status.type === 'Running' || engine.status.type === 'Loading')
+    && !noModel
+
+  const m = engine.metrics
+  const v = (key: keyof NonNullable<typeof m>) => noModel ? null : (m?.[key] ?? null) as number | null
+
+  const tps = v('tokens_per_sec')
+  const avgTps = v('avg_tokens_per_sec')
+  const perReqTps = v('per_request_tps')
+  const promptTps = v('prompt_tokens_per_sec')
+  const avgPromptTps = v('avg_prompt_tokens_per_sec')
+  const perReqPromptTps = v('per_request_prompt_tps')
+  const totalPromptTokens = v('total_prompt_tokens')
+  const totalGenerationTokens = v('total_generation_tokens')
+  const ttft = v('ttft_ms')
+  const e2eLatency = v('e2e_latency_ms')
+  const queueTime = v('queue_time_ms')
+  const interTokenLatency = v('inter_token_latency_ms')
+  const batchSize = v('avg_batch_size')
+  const activeReqs = v('active_requests')
+  const queuedReqs = v('queued_requests')
+  const totalReqs = v('total_requests')
+  const swappedReqs = v('swapped_requests')
+  const kvPercent = v('kv_cache_percent')
+  const prefixCacheHit = v('prefix_cache_hit_rate')
+  const preemptions = v('preemptions_total')
+  // Speculative decoding — present only when the served model has it enabled.
+  const specDraftTokens = v('spec_decode_draft_tokens_total')
+  const specAcceptedTokens = v('spec_decode_accepted_tokens_total')
+  const specAcceptanceRate = v('spec_decode_acceptance_rate')
+  const specAcceptanceRateLive = v('spec_decode_acceptance_rate_live')
+  const specMeanAcceptanceLength = v('spec_decode_mean_acceptance_length')
+  // Show the section only once the engine has actually drafted tokens. The
+  // counter is present (non-null) whenever spec decoding is configured, but it
+  // sits at 0 on a freshly-started idle engine — gating on >0 keeps the card
+  // from showing an all-dashes section until the metrics carry real values.
+  const hasSpecDecode = specDraftTokens !== null && specDraftTokens > 0
+  const engineKey = `${engine.engine_type}-${engine.endpoint}`
+  const modelName = engine.model?.name ?? null
+  const { thresholds: slo, setThresholds: setSlo, reset: resetSlo, isCustomized: sloCustomized } =
+    useSloSettings(engineKey, modelName)
+
+  // Recompute goodput from histogram buckets so user-customized SLO
+  // thresholds actually move the displayed percentages. Falls back to the
+  // backend-default `*_goodput_pct` when buckets are absent (warmup, no
+  // traffic) so the tile still renders something useful.
+  const ttftBuckets = noModel ? null : (m?.ttft_buckets ?? null)
+  const itlBuckets = noModel ? null : (m?.itl_buckets ?? null)
+  const e2eBuckets = noModel ? null : (m?.e2e_buckets ?? null)
+  const tpotBuckets = noModel ? null : (m?.tpot_buckets ?? null)
+  const ttftGoodput = recomputeGoodputPct(ttftBuckets, slo.ttftMs) ?? v('ttft_goodput_pct')
+  const itlGoodput = recomputeGoodputPct(itlBuckets, slo.itlMs) ?? v('itl_goodput_pct')
+  const e2eGoodput = recomputeGoodputPct(e2eBuckets, slo.e2eMs) ?? v('e2e_goodput_pct')
+  const tpotGoodput = recomputeGoodputPct(tpotBuckets, slo.tpotMs) ?? v('tpot_goodput_pct')
+  const overallGoodput = combinedGoodput(ttftGoodput, itlGoodput, e2eGoodput)
+
+  // Resolve latency tile values according to the global mode setting
+  // (avg / p50 / p95 / p99). Avg falls back to the histogram-derived
+  // sum/count means; percentile modes pull from the histograms struct.
+  const ttftPctl = noModel ? null : (m?.ttft_percentiles ?? null)
+  const itlPctl = noModel ? null : (m?.itl_percentiles ?? null)
+  const e2ePctl = noModel ? null : (m?.e2e_percentiles ?? null)
+  const tpotPctl = noModel ? null : (m?.tpot_percentiles ?? null)
+  const tpot = v('tpot_ms')
+  const ttftDisplay = pickLatencyValue(latencyMode, ttft, ttftPctl)
+  const itlDisplay = pickLatencyValue(latencyMode, interTokenLatency, itlPctl)
+  const e2eDisplay = pickLatencyValue(latencyMode, e2eLatency, e2ePctl)
+  const tpotDisplay = pickLatencyValue(latencyMode, tpot, tpotPctl)
+  const e2eFmt = formatDurationMs(e2eDisplay)
+  const latencyHeading = `延迟 · ${latencyModeLabel(latencyMode)}`
+
+  // Compute trends from chart data
+  const tpsTrend: Trend = chartData ? computeTrend(chartData.tps) : 'stable'
+  const avgTpsTrend: Trend = chartData ? computeTrend(chartData.avgTps) : 'stable'
+  const perReqTpsTrend: Trend = chartData ? computeTrend(chartData.perReqTps) : 'stable'
+  const promptTpsTrend: Trend = chartData ? computeTrend(chartData.promptTps) : 'stable'
+  const avgPromptTpsTrend: Trend = chartData ? computeTrend(chartData.avgPromptTps) : 'stable'
+  const perReqPromptTpsTrend: Trend = chartData ? computeTrend(chartData.perReqPromptTps) : 'stable'
+  const ttftSeries = chartData
+    ? (latencyMode === 'p50' ? chartData.ttftP50
+       : latencyMode === 'p95' ? chartData.ttftP95
+       : latencyMode === 'p99' ? chartData.ttftP99
+       : chartData.ttft)
+    : []
+  const itlSeries = chartData
+    ? (latencyMode === 'p50' ? chartData.itlP50
+       : latencyMode === 'p95' ? chartData.itlP95
+       : latencyMode === 'p99' ? chartData.itlP99
+       : chartData.interTokenLatency)
+    : []
+  const e2eSeries = chartData
+    ? (latencyMode === 'p50' ? chartData.e2eP50
+       : latencyMode === 'p95' ? chartData.e2eP95
+       : latencyMode === 'p99' ? chartData.e2eP99
+       : chartData.e2eLatency)
+    : []
+  const tpotSeries = chartData
+    ? (latencyMode === 'p50' ? chartData.tpotP50
+       : latencyMode === 'p95' ? chartData.tpotP95
+       : latencyMode === 'p99' ? chartData.tpotP99
+       : chartData.tpot)
+    : []
+  const ttftTrend: Trend = chartData ? computeTrend(ttftSeries) : 'stable'
+  const e2eTrend: Trend = chartData ? computeTrend(e2eSeries) : 'stable'
+  const queueTrend: Trend = chartData ? computeTrend(chartData.queueTime) : 'stable'
+  const itlTrend: Trend = chartData ? computeTrend(itlSeries) : 'stable'
+  const tpotTrend: Trend = chartData ? computeTrend(tpotSeries) : 'stable'
+  const batchTrend: Trend = chartData ? computeTrend(chartData.batchSize) : 'stable'
+  const kvTrend: Trend = chartData ? computeTrend(chartData.kv) : 'stable'
+
+  const requestSpans = requests?.map(r => ({
+    start: r.start_ms, end: r.end_ms, tps: r.tps, ttft: r.ttft_ms,
+  }))
+
+  return (
+    <div className="flex flex-col">
+      {isWaitingForMetrics ? (
+        <p className="text-sm text-zinc-500">正在等待指标...</p>
+      ) : (
+        <>
+          {/* ── Grouped metrics with trend arrows — 6 categories in 2 rows (3×2), each with chart below ── */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 py-1">
+            {/* Prefill Throughput */}
+            <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0 flex flex-col">
+              <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">Prefill 吞吐</div>
+              <div className="grid grid-cols-1 gap-1.5">
+                <LiveWithTotal liveValue={fmtVal(promptTps, formatTps)} liveUnit="Tok/s" trend={promptTpsTrend} totalLabel="Processed" total={totalPromptTokens} />
+                <MetricTile label="Avg" value={fmtVal(avgPromptTps, formatTps)} unit="Tok/s" trend={avgPromptTpsTrend} />
+                <MetricTile label="Per-Req Avg" value={fmtVal(perReqPromptTps, formatTps)} unit="Tok/s" trend={perReqPromptTpsTrend} />
+              </div>
+              {showCharts && chartData && (
+                <div className="mt-auto pt-2 min-h-0">
+                  <TimeSeriesChart
+                    title="预填充吞吐（Tok/s）"
+                    hideTooltipLabel
+                    series={prefillTokenSeries(chartData)}
+                    unit="Tok/s"
+                    height="clamp(48px, 8vh, 120px)"
+                    requests={requestSpans}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Decode Throughput */}
+            <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0 flex flex-col">
+              <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">Decode 吞吐</div>
+              <div className="grid grid-cols-1 gap-1.5">
+                <LiveWithTotal liveValue={fmtVal(tps, formatTps)} liveUnit="Tok/s" trend={tpsTrend} totalLabel="Generated" total={totalGenerationTokens} />
+                <MetricTile label="Avg" value={fmtVal(avgTps, formatTps)} unit="Tok/s" trend={avgTpsTrend} />
+                <MetricTile label="Per-Req Avg" value={fmtVal(perReqTps, formatTps)} unit="Tok/s" trend={perReqTpsTrend} />
+              </div>
+              {showCharts && chartData && (
+                <div className="mt-auto pt-2 min-h-0">
+                  <TimeSeriesChart
+                    title="解码吞吐（Tok/s）"
+                    hideTooltipLabel
+                    series={decodeTokenSeries(chartData)}
+                    unit="Tok/s"
+                    height="clamp(48px, 8vh, 120px)"
+                    requests={requestSpans}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Latency */}
+            <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0 flex flex-col">
+              <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">{latencyHeading}</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <MetricTile label="TTFT" value={fmtVal(ttftDisplay, formatTtft)} unit="ms" trend={ttftTrend} invertTrend />
+                <MetricTile label="E2E" value={e2eFmt.value} unit={e2eFmt.unit} trend={e2eTrend} invertTrend />
+                <MetricTile label="排队时间" value={fmtVal(queueTime, formatTtft)} unit="毫秒" trend={queueTrend} invertTrend />
+                <MetricTile label="ITL" value={fmtVal(itlDisplay, formatTtft)} unit="ms" trend={itlTrend} invertTrend />
+                <MetricTile label="TPOT" value={fmtVal(tpotDisplay, formatTtft)} unit="ms" trend={tpotTrend} invertTrend />
+                <MetricTile label="Batch" value={batchSize !== null ? batchSize.toFixed(1) : '--'} unit="/step" trend={batchTrend} />
+              </div>
+              {showCharts && chartData && (
+                <div className="mt-auto pt-2 min-h-0">
+                  <TimeSeriesChart
+                    title={`延迟（毫秒）· ${latencyModeLabel(latencyMode)}`}
+                    hideTooltipLabel
+                    series={[
+                      { data: ttftSeries, label: 'TTFT', color: '#f59e0b', axis: 'left' },
+                      { data: chartData.queueTime, label: '排队', color: '#8b5cf6', axis: 'right' },
+                      { data: itlSeries, label: 'ITL', color: '#14b8a6', axis: 'right' },
+                      { data: tpotSeries, label: 'TPOT', color: '#ec4899', axis: 'right' },
+                    ]}
+                    unit="毫秒"
+                    height="clamp(48px, 8vh, 120px)"
+                    requests={requestSpans}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* SLO Goodput */}
+            <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0 flex flex-col">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight truncate">SLO 达标情况</div>
+                <SloSettingsControl
+                  thresholds={slo}
+                  isCustomized={sloCustomized}
+                  disabled={modelName === null}
+                  onChange={setSlo}
+                  onReset={resetSlo}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="col-span-2"><GoodputTile label="综合" pct={overallGoodput} emphasize /></div>
+                <GoodputTile label={`TTFT ≤ ${slo.ttftMs}ms`} pct={ttftGoodput} />
+                <GoodputTile label={`ITL ≤ ${slo.itlMs}ms`} pct={itlGoodput} />
+                <GoodputTile label={`TPOT ≤ ${slo.tpotMs}ms`} pct={tpotGoodput} />
+                <GoodputTile label={`E2E ≤ ${formatE2eLabel(slo.e2eMs)}`} pct={e2eGoodput} />
+              </div>
+              {showCharts && chartData && (
+                <div className="mt-auto pt-2 min-h-0">
+                  <TimeSeriesChart
+                    title={`端到端延迟（秒）· ${latencyModeLabel(latencyMode)}`}
+                    hideTooltipLabel
+                    seriesLabel="端到端延迟"
+                    data={e2eSeries.map(p => ({ ...p, value: p.value / 1000 }))}
+                    unit="s"
+                    height="clamp(48px, 8vh, 120px)"
+                    requests={requestSpans}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Requests */}
+            <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0 flex flex-col">
+              <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">请求</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <MetricTile label="活跃" value={fmtInt(activeReqs)} />
+                <MetricTile label="排队" value={fmtInt(queuedReqs)} />
+                <MetricTile label="总计" value={fmtInt(totalReqs)} />
+                {swappedReqs !== null && swappedReqs > 0 && (
+                  <MetricTile label="已换出" value={fmtInt(swappedReqs)} warn />
+                )}
+                {preemptions !== null && preemptions > 0 && (
+                  <MetricTile label="抢占" value={fmtInt(preemptions)} warn />
+                )}
+              </div>
+              {showCharts && chartData && (
+                <div className="mt-auto pt-2 min-h-0">
+                  <TimeSeriesChart
+                    title="请求"
+                    hideTooltipLabel
+                    series={[
+                      { data: chartData.activeRequests, label: '活跃', color: '#76B900', axis: 'left' },
+                      { data: chartData.queuedRequests, label: '排队', color: '#f59e0b', axis: 'left' },
+                      { data: chartData.totalRequests, label: '总计', color: '#3b82f6', axis: 'right' },
+                    ]}
+                    unit=""
+                    height="clamp(48px, 8vh, 120px)"
+                    requests={requestSpans}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Cache & Speculative Decoding */}
+            <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0 flex flex-col">
+              <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">缓存与推测解码</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider truncate">KV Cache</span>
+                  <div className="flex items-baseline">
+                    <span className="text-lg xl:text-xl 2xl:text-2xl min-[1920px]:text-3xl min-[2560px]:text-4xl font-bold text-zinc-100 font-mono tabular-nums leading-none">
+                      {kvPercent !== null ? Math.round(kvPercent) : '--'}
+                    </span>
+                    <span className="text-xs text-zinc-500 ml-1">%</span>
+                    <TrendArrow trend={kvTrend} invertColor />
+                  </div>
+                  {kvPercent !== null && <KvBar percent={kvPercent} />}
+                </div>
+                <MetricTile label="Prefix Hit" value={prefixCacheHit !== null ? `${Math.round(prefixCacheHit)}` : '--'} unit="%" />
+              </div>
+              {hasSpecDecode && (
+                <SpecDecodeSection
+                  acceptanceRate={specAcceptanceRate}
+                  acceptanceRateLive={specAcceptanceRateLive}
+                  meanAcceptanceLength={specMeanAcceptanceLength}
+                  acceptedTokens={specAcceptedTokens}
+                  draftTokens={specDraftTokens}
+                />
+              )}
+              {showCharts && chartData && (
+                <div className="mt-auto pt-2 min-h-0">
+                  <TimeSeriesChart
+                    title="缓存使用率（%）"
+                    hideTooltipLabel
+                    series={[
+                      { data: chartData.kv, label: 'KV Cache', color: '#76B900' },
+                      { data: chartData.prefixCacheHit, label: 'Prefix Hit', color: '#3b82f6' },
+                    ]}
+                    yDomain={[0, 100]}
+                    unit="%"
+                    height="clamp(48px, 8vh, 120px)"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

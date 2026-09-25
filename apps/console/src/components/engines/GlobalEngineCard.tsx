@@ -1,0 +1,199 @@
+import { formatTps, formatTtft, formatDurationMs } from '@/lib/format'
+import type { AggregateSnapshot } from '@/lib/engineAggregate'
+import { MetricTile, LiveWithTotal, KvBar, GoodputTile, SpecDecodeSection, fmtVal, fmtInt } from './EngineCardPrimitives'
+import { type LatencyMode, latencyModeLabel, pickLatencyValue } from './LatencyModeControl'
+import { SLO, combinedGoodput } from '@/lib/slo'
+
+interface GlobalEngineCardProps {
+  snapshot: AggregateSnapshot
+  latencyMode?: LatencyMode
+}
+
+/** Styled to match the metric-group tiles below (same bg/radius/padding idiom). */
+function RunningCountCard({ count }: { count: number }) {
+  return (
+    <div className="bg-white/[0.02] rounded-md px-4 py-3.5 w-fit">
+      <div className="text-sm font-semibold text-zinc-300 tracking-tight mb-2">
+        运行中引擎
+      </div>
+      <span className="text-5xl font-bold font-mono tabular-nums leading-none text-[#76B900]">
+        {count}
+      </span>
+    </div>
+  )
+}
+
+export function GlobalEngineCard({ snapshot, latencyMode = 'avg' }: GlobalEngineCardProps) {
+  const {
+    running_count,
+    total_count,
+    tokens_per_sec,
+    avg_tokens_per_sec,
+    per_request_tps,
+    prompt_tokens_per_sec,
+    avg_prompt_tokens_per_sec,
+    per_request_prompt_tps,
+    ttft_ms,
+    e2e_latency_ms,
+    queue_time_ms,
+    inter_token_latency_ms,
+    avg_batch_size,
+    active_requests,
+    queued_requests,
+    total_requests,
+    swapped_requests,
+    preemptions_total,
+    total_prompt_tokens,
+    total_generation_tokens,
+    kv_cache_percent,
+    prefix_cache_hit_rate,
+    spec_decode_draft_tokens_total,
+    spec_decode_accepted_tokens_total,
+    spec_decode_acceptance_rate,
+    spec_decode_acceptance_rate_live,
+    spec_decode_mean_acceptance_length,
+    ttft_percentiles,
+    itl_percentiles,
+    e2e_percentiles,
+    ttft_goodput_pct,
+    itl_goodput_pct,
+    e2e_goodput_pct,
+  } = snapshot
+  const overallGoodput = combinedGoodput(ttft_goodput_pct, itl_goodput_pct, e2e_goodput_pct)
+
+  const ttftDisplay = pickLatencyValue(latencyMode, ttft_ms, ttft_percentiles)
+  const itlDisplay = pickLatencyValue(latencyMode, inter_token_latency_ms, itl_percentiles)
+  const e2eDisplay = pickLatencyValue(latencyMode, e2e_latency_ms, e2e_percentiles)
+  const e2eFmt = formatDurationMs(e2eDisplay)
+  const latencyHeading = `延迟 · ${latencyModeLabel(latencyMode)}`
+
+  if (running_count === 0) {
+    return (
+      <div className="flex flex-col h-full gap-3">
+        <RunningCountCard count={0} />
+        <p className="text-sm text-zinc-500">
+          {total_count === 0
+            ? '未检测到推理引擎。启动 vLLM 后将自动显示在这里。'
+            : '当前没有正在运行的引擎，正在等待推理服务上线。'}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-full gap-3">
+      <RunningCountCard count={running_count} />
+
+      {/* ── Grouped aggregate metrics — 6 categories in 2 rows (3×2) ── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 py-1">
+        {/* Prefill Throughput */}
+        <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0">
+          <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">
+            Prefill 吞吐
+            <span className="ml-1 text-[9px] font-normal text-zinc-500">（求和）</span>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5">
+            <LiveWithTotal liveValue={fmtVal(prompt_tokens_per_sec, formatTps)} liveUnit="Tok/s" totalLabel="Processed" total={total_prompt_tokens} />
+            <MetricTile label="Avg" value={fmtVal(avg_prompt_tokens_per_sec, formatTps)} unit="Tok/s" />
+            <MetricTile label="Per-Req Avg" value={fmtVal(per_request_prompt_tps, formatTps)} unit="Tok/s" />
+          </div>
+        </div>
+
+        {/* Decode Throughput */}
+        <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0">
+          <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">
+            Decode 吞吐
+            <span className="ml-1 text-[9px] font-normal text-zinc-500">（求和）</span>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5">
+            <LiveWithTotal liveValue={fmtVal(tokens_per_sec, formatTps)} liveUnit="Tok/s" totalLabel="Generated" total={total_generation_tokens} />
+            <MetricTile label="Avg" value={fmtVal(avg_tokens_per_sec, formatTps)} unit="Tok/s" />
+            <MetricTile label="Per-Req Avg" value={fmtVal(per_request_tps, formatTps)} unit="Tok/s" />
+          </div>
+        </div>
+
+        {/* Latency */}
+        <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0">
+          <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">
+            {latencyHeading}
+            <span className="ml-1 text-[9px] font-normal text-zinc-500">（加权）</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <MetricTile label="TTFT" value={fmtVal(ttftDisplay, formatTtft)} unit="ms" />
+            <MetricTile label="E2E" value={e2eFmt.value} unit={e2eFmt.unit} />
+            <MetricTile label="排队时间" value={fmtVal(queue_time_ms, formatTtft)} unit="毫秒" />
+            <MetricTile label="ITL" value={fmtVal(itlDisplay, formatTtft)} unit="ms" />
+            <MetricTile label="Batch" value={avg_batch_size !== null ? avg_batch_size.toFixed(1) : '--'} unit="/step" />
+          </div>
+        </div>
+
+        {/* SLO Goodput */}
+        <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0">
+          <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">
+            SLO 达标情况
+            <span className="ml-1 text-[9px] font-normal text-zinc-500">（加权）</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="col-span-2"><GoodputTile label="综合" pct={overallGoodput} emphasize /></div>
+            <GoodputTile label={`TTFT ≤ ${SLO.ttftMs}ms`} pct={ttft_goodput_pct} />
+            <GoodputTile label={`ITL ≤ ${SLO.itlMs}ms`} pct={itl_goodput_pct} />
+            <div className="col-span-2"><GoodputTile label={`E2E ≤ ${(SLO.e2eMs / 1000).toFixed(0)}s`} pct={e2e_goodput_pct} /></div>
+          </div>
+        </div>
+
+        {/* Requests */}
+        <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0">
+          <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">
+            请求
+            <span className="ml-1 text-[9px] font-normal text-zinc-500">（求和）</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <MetricTile label="活跃" value={fmtInt(active_requests)} />
+            <MetricTile label="排队" value={fmtInt(queued_requests)} />
+            <MetricTile label="总计" value={fmtInt(total_requests)} />
+            {swapped_requests !== null && swapped_requests > 0 && (
+              <MetricTile label="已换出" value={fmtInt(swapped_requests)} warn />
+            )}
+            {preemptions_total !== null && preemptions_total > 0 && (
+              <MetricTile label="抢占" value={fmtInt(preemptions_total)} warn />
+            )}
+          </div>
+        </div>
+
+        {/* Cache & Speculative Decoding */}
+        <div className="bg-white/[0.02] rounded-md px-3 py-2.5 2xl:px-4 2xl:py-3 min-w-0">
+          <div className="text-[11px] 2xl:text-xs min-[1920px]:text-sm font-semibold text-zinc-300 tracking-tight mb-1.5 truncate">
+            缓存与推测解码
+            <span className="ml-1 text-[9px] font-normal text-zinc-500">（平均）</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider truncate">KV Cache</span>
+              <div className="flex items-baseline">
+                <span className="text-lg xl:text-xl 2xl:text-2xl min-[1920px]:text-3xl min-[2560px]:text-4xl font-bold text-zinc-100 font-mono tabular-nums leading-none">
+                  {kv_cache_percent !== null ? Math.round(kv_cache_percent) : '--'}
+                </span>
+                <span className="text-xs text-zinc-500 ml-1">%</span>
+              </div>
+              {kv_cache_percent !== null && <KvBar percent={kv_cache_percent} />}
+            </div>
+            <MetricTile
+              label="Prefix Hit"
+              value={prefix_cache_hit_rate !== null ? `${Math.round(prefix_cache_hit_rate)}` : '--'}
+              unit="%"
+            />
+          </div>
+          {spec_decode_draft_tokens_total !== null && spec_decode_draft_tokens_total > 0 && (
+            <SpecDecodeSection
+              acceptanceRate={spec_decode_acceptance_rate}
+              acceptanceRateLive={spec_decode_acceptance_rate_live}
+              meanAcceptanceLength={spec_decode_mean_acceptance_length}
+              acceptedTokens={spec_decode_accepted_tokens_total}
+              draftTokens={spec_decode_draft_tokens_total}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

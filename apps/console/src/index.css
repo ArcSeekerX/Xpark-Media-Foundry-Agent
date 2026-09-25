@@ -1,0 +1,240 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+
+/* Smooth path morphing for recharts line updates */
+.recharts-line-curve path {
+  transition: d 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Tab rotation countdown bar — browser-driven, jitter-free. */
+@keyframes tab-rotation-shrink {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.tab-rotation-bar {
+  transform-origin: left center;
+  animation-name: tab-rotation-shrink;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  animation-duration: var(--rotation-duration, 10000ms);
+  will-change: transform;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .recharts-line-curve path { transition: none !important; }
+  .animate-pulse-dot { animation: none; }
+  .tab-rotation-bar { animation: none; transform: scaleX(0); }
+}
+
+/* Subtle scrollbar for dark theme */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #252529; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+/* Gauge glow filter — reused by ArcGauge */
+.gauge-glow { filter: drop-shadow(0 0 4px var(--glow-color, #76B900)); }
+
+/* ── Day/night theme ────────────────────────────────────────────────────────
+   The app's own components are written dark-first with zinc-*/white-* utilities.
+   Rather than touching component markup, light mode remaps the underlying
+   Tailwind CSS variables and overrides the handful of hardcoded dark surface
+   utilities. Default (no `data-theme`) is dark, so these rules only fire when
+   `data-theme="light"` is set on <html> (see hooks/useTheme.ts). */
+
+/* Chart/gauge colors shared with SVG presentation attributes. */
+:root {
+  --chart-grid: #1a1a1e;
+  --gauge-track: #222226;
+}
+
+[data-theme="light"] {
+  /* `--color-white` flips every white/[α] border/overlay (the bulk of the
+     chrome) to a dark ink overlay. Solid `bg-white`/`text-white` spots that
+     must stay white use literal `#fff` classes instead. */
+  --color-white: #17171b;
+  /* Reverse the zinc ramp: "zinc-100 text" (near-white on dark) becomes
+     near-black on light, "zinc-700" separators become pale. */
+  --color-zinc-50: #09090b;
+  --color-zinc-100: #18181b;
+  --color-zinc-200: #27272a;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-400: #52525b;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #a1a1aa;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-900: #f4f4f5;
+  --chart-grid: #e7e7ea;
+  --gauge-track: #e7e7ea;
+}
+
+/* Hardcoded dark surface utilities → light surfaces. `text-[#08080a]` (dark
+   text on green buttons) is intentionally left alone. */
+[data-theme="light"] .bg-\[\#08080a\] { background-color: #fafafa; }   /* app page */
+[data-theme="light"] .bg-\[\#0c0c10\] { background-color: #ffffff; }   /* sidebar, dialogs */
+[data-theme="light"] .bg-\[\#0a0a0d\]\/80 { background-color: rgba(248, 248, 250, 0.8); }
+[data-theme="light"] .bg-\[\#0d0d10\] { background-color: #ffffff; }   /* cards */
+[data-theme="light"] .bg-\[\#0d0d10\]\/95 { background-color: rgba(255, 255, 255, 0.95); }
+[data-theme="light"] .bg-\[\#050508\] { background-color: #ffffff; }   /* inputs */
+[data-theme="light"] .bg-\[\#111115\] { background-color: #f4f4f5; }   /* card inner */
+[data-theme="light"] .bg-\[\#151519\] { background-color: #f4f4f5; }
+[data-theme="light"] .bg-\[\#1a1a1e\] { background-color: #f4f4f5; }   /* tooltips */
+
+/* Scrollbar follows the theme. */
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c8c8cd; }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #a8a8ad; }
+
+/* Core Heatmap: cells sit on a transparent board. Grid lines come from a
+   shared per-cell right/bottom border plus the container's top/left border,
+   so idle (transparent) cells still show their box outline. */
+.heatmap-grid {
+  --hm-line: rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--hm-line);
+  border-left: 1px solid var(--hm-line);
+}
+.heatmap-cell {
+  border-right: 1px solid var(--hm-line);
+  border-bottom: 1px solid var(--hm-line);
+}
+[data-theme="light"] .heatmap-grid {
+  --hm-line: rgba(23, 23, 27, 0.30);
+  background-color: transparent;
+}

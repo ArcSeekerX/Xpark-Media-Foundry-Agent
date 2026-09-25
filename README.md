@@ -67,6 +67,25 @@ Xpark Media Foundry Agent（`Xpark-Media-Foundry-Agent`）是一条视频数字�
 | Laya | 340.1s | −35.9% | 0.761 |
 | OpenJev | 400.1s | −24.5% | 0.760 |
 
+### 控制台：主 Agent 流程页（新增主模块）
+
+`apps/console/` 复用 Xpark-AI-Perf 前端框架，仅保留白天模式，含三个模块：
+
+| 模块 | 说明 |
+|---|---|
+| **主 Agent（默认）** | 一句话智能引导 → 场景/分镜 + 技能匹配 → 提示词编辑 → 生成与质检 → 修复闭环 → 剪辑拼接 → 素材归档 |
+| 系统监控 | GPU/CPU/内存/磁盘/网络与推理引擎指标、图表、远程节点面板 |
+| 在线对话 | 多会话、模型选择、思考块、图片上传、流式回复、生成参数 |
+
+后端接口可暂不接入：内置 mock 层（`src/mock/metrics.ts` 合成指标、`src/mock/chat.ts` 合成 SSE 回复），Agent 流程本身也自带 mock 适配器。接入真实后端时设 `VITE_MOCK=0` 与 `VITE_BACKEND_URL`。
+
+```bash
+cd apps/console
+PATH=/opt/node22/bin:$PATH npm install   # Vite 8 / rolldown 需 Node >= 20
+PATH=/opt/node22/bin:$PATH npm run build
+PATH=/opt/node22/bin:$PATH npm run preview   # http://0.0.0.0:5000
+```
+
 ---
 
 ## 生成引擎详解：W4A4 + Streaming VSA（RTX 4070 路径）
@@ -250,6 +269,7 @@ API 版与 GUI 用 JSON 不同，需要以 `{"prompt": <API JSON>, "client_id": 
 | 主题 | 文档 |
 |---|---|
 | 数字资产流水线（学习视频） | [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) · [Skill](skills/learning-video/SKILL.md) |
+| 控制台（主 Agent / 系统监控 / 在线对话） | [apps/console](apps/console) · [apps/web](apps/web) |
 | 部署（ComfyUI / GB10 / Docker） | [DEPLOYMENT.zh.md](DEPLOYMENT.zh.md) |
 | 009jev native SLA（推荐） | [009JEV.md](009JEV.md) |
 | Laya 本地决策引擎（默认） | [LAYA.md](LAYA.md) |
