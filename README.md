@@ -1,18 +1,77 @@
-> **实验分支 / Experimental branch:** 新增正式实验方法 **009jev**：普通模型 + native SLA，从首次起即用 Jev 进行逐层控制. 无需 W4A4 转换. See [日文](009JEV.md) / [English](009JEV.en.md). 采用对比为 366.72→213.89 秒（SLA + Jev 的整体效果，各测 1 次）. 旧的 W4A4/VSA 控制见 [旧方式的记录](JEV_ADAPTIVE.md).
+> **实验分支 / Experimental branch:** 新增正式实验方法 **009jev**：普通模型 + native SLA，从首次起即用 Jev 进行逐层控制. 无需 W4A4 转换. See [中文](009JEV.md) / [English](009JEV.en.md). 采用对比为 366.72→213.89 秒（SLA + Jev 的整体效果，各测 1 次）. 旧的 W4A4/VSA 控制见 [旧方式的记录](JEV_ADAPTIVE.md).
 
-> **解说文章 / Article (Japanese):** [基于 Jev 的 MiniMax H3 Attention 稀疏控制（验证与实现的解说）](https://note.com/sepiablue/n/n0b19389703eb)
-
-[简体中文](#comfyui-h3-streaming-v2) | [English](#english-documentation)
+[简体中文](#xpark-media-foundry-agent) | [English](#english-documentation)
 
 ---
 
-# ComfyUI H3 Streaming v2
+# Xpark Media Foundry Agent
 
-在 RTX 4070 12GB 上加速 MiniMax H3 Ref2VA 的 FC1 W4A4 + Streaming VSA 配置. 已在 832×1408 / 124f / 4step 下完成实际生成验证.
-组合了 **FC1 Plain ConvRot W4A4，预先保存的 INT8 Gate，固定 padding 判定缓存**.
-权重转换仅在安装时执行一次，生成时从 CPU 加载并利用 ComfyUI 的 Dynamic VRAM / offload.
+Xpark Media Foundry Agent（`Xpark-Media-Foundry-Agent`）是一条视频数字资产流水线：把文档与图片素材批量制作成 1080P 动画解说视频资产，流程为 素材摄取 → 分镜脚本 → 逐片段生成 → 质检 → ffmpeg 拼接成片。生成层集成 MiniMax-H3 与 009jev native SLA / W4A4+VSA 两条加速路径，决策引擎 Laya（本地）/ OpenJev（llama.cpp）/ Jev（远程 API）逐层动态分配注意力 keep 率，显著降低算力与显存开销。
 
-**在 Windows 上使用 `setup.bat` 即可轻松安装. 已在 ComfyUI v0.36.0 上完成安装与实际生成的确认.** 只要准备好兼容的 ComfyUI 和所需模型，即可一次性完成 Python 选择，兼容性检查，节点配置与预转换. 不会自动下载模型.
+## 数字资产流水线
+
+```
+源素材 (docx / 图片集)
+  │ ① 素材摄取   抽取 word/media 与段落结构，按章节主线选图
+  ▼
+分镜脚本 (每图：旁白 + 动效脚本)
+  │ ② 脚本编排   1080P 模板、逐片段种子、顺序浮现动效
+  ▼
+片段生成 (H3 + 009jev/laya 决策加速)
+  │ ③ 批量生成   learning_video_1080p.api.json · gen_learning_video.py
+  ▼
+片段资产 (5 秒 · 1920×1080 · 24fps · 中文旁白)
+  │ ④ 质检/后期  抽帧 + ffprobe + 去水印 + ffmpeg concat
+  ▼
+成片 (数字资产)
+```
+
+| 阶段 | 载体 | 产物 |
+|---|---|---|
+| ① 素材摄取 | docx `word/media/`（`unzip`/`zipfile`）、段落结构 | 图片素材集（6–10 张示意图） |
+| ② 脚本编排 | 每图 `旁白`(≤45 字) + `动效脚本`，`PROMPT_TMPL` | 分镜脚本 `CLIPS` |
+| ③ 逐片段生成 | [learning_video_1080p.api.json](examples/learning_video_1080p.api.json)、[gen_learning_video.py](skills/learning-video/scripts/gen_learning_video.py) | 5 秒 1080P 动画片段 |
+| ④ 质检 | 抽头/中/尾 3 帧、`ffprobe` | 通过质检的片段 |
+| ⑤ 后期/交付 | `dewatermark.sh`（可选）、`concat_learn.sh` | 成片 mp4（1920×1080 · CRF 18） |
+
+### 快速开始（学习视频工厂）
+
+1. 部署 ComfyUI + MiniMax-H3（Docker / GB10 见 [DEPLOYMENT.zh.md](DEPLOYMENT.zh.md)）。
+2. 安装本仓库到 `custom_nodes/Xpark-Media-Foundry-Agent`，并准备决策引擎（默认本地 Laya，见 [LAYA.md](LAYA.md)）。
+3. 将文档图片放入 ComfyUI `input/`，填写三要素后运行 `python3 skills/learning-video/scripts/gen_learning_video.py 1 2 3`。
+4. 抽帧质检后，用 `skills/learning-video/scripts/concat_learn.sh` 拼接成片。
+5. 详细步骤、动效写法与质检清单见 [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) 与 [学习视频 Skill](skills/learning-video/SKILL.md)。
+
+### 流水线的生成引擎
+
+生成层由 MiniMax H3 + 决策引擎驱动的自适应稀疏注意力构成，按硬件与需求二选一：
+
+| 路径 | 节点 | 说明 | 文档 |
+|---|---|---|---|
+| **009jev native SLA（推荐）** | `H3JevNativeSLAPatch` | 普通模型 + native SLA，无需 W4A4 转换，逐层动态 keep | [009JEV.md](009JEV.md) |
+| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 预转换 + 固定/自适应 VSA，适合 12GB 显存 | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
+
+决策引擎三选一，契约一致、可热切换（环境变量 `H3_DECISION_ENGINE`）：
+
+| 引擎 | 部署 | 说明 | 文档 |
+|---|---|---|---|
+| Laya（默认） | 进程内本地模型 | 322M 本地决策模型，离线免费 | [LAYA.md](LAYA.md) |
+| OpenJev | 本地 llama-server | GGUF 生成式决策，一问一答 | [OPENJEV.md](OPENJEV.md) |
+| Jev | 远程 TypeSafe API | 需 `TYPESAFE_API_KEY` | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
+
+实测性能（GB10，5 秒 4 步视频，热缓存）：
+
+| 引擎 | 耗时 | vs 基线 | SSIM vs 基线 |
+|---|---:|---:|---:|
+| 基线 | 530.2s | — | 1.0 |
+| Laya | 340.1s | −35.9% | 0.761 |
+| OpenJev | 400.1s | −24.5% | 0.760 |
+
+---
+
+## 生成引擎详解：W4A4 + Streaming VSA（RTX 4070 路径）
+
+以下为 FC1 W4A4 + Streaming VSA 路径的安装、一次性转换、工作流与验证说明。**在 Windows 上使用 `setup.bat` 即可轻松安装. 已在 ComfyUI v0.36.0 上完成安装与实际生成的确认.** 只要准备好兼容的 ComfyUI 和所需模型，即可一次性完成 Python 选择，兼容性检查，节点配置与预转换. 不会自动下载模型.
 
 ### 安装前需要了解的事项
 
@@ -109,14 +168,14 @@ setup.bat -ComfyRoot "C:\ComfyUI_windows_portable\ComfyUI"
 
 通常**只需使用上述 `setup.bat`** 即可完成检查与转换. 以下是希望手动执行时的步骤.
 
-1. 将本仓库整体放置到 `ComfyUI/custom_nodes/ComfyUI-MiniMax-H3-W4A4-VSA/`.
+1. 将本仓库整体放置到 `ComfyUI/custom_nodes/Xpark-Media-Foundry-Agent/`.
 2. 使上述模型和外部节点可用. 为避免正在运行的生成任务与转换争抢 GPU，请在生成结束后再进行转换.
 3. 使用 **ComfyUI 自带的 Python** 进行确认与转换. 以下是从 Windows portable 根目录执行的 PowerShell 示例.
 
 ```powershell
 $h3Python = '.\python_embeded\python.exe'
 $h3Root = '.\ComfyUI'
-$h3Convert = '.\ComfyUI\custom_nodes\ComfyUI-MiniMax-H3-W4A4-VSA\convert.py'
+$h3Convert = '.\ComfyUI\custom_nodes\Xpark-Media-Foundry-Agent\convert.py'
 
 # 耗时数秒的 native INT4 / CPU offload / 重新加载到 GPU 确认. 不生成文件.
 & $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root --check --gpu 0
@@ -186,11 +245,81 @@ API 版与 GUI 用 JSON 不同，需要以 `{"prompt": <API JSON>, "client_id": 
 性能与验证范围请参阅 [VALIDATION.md](VALIDATION.md). 视频的主观画质，角色还原度和音频质量未做评估.
 源代码采用 [GPL-3.0](LICENSE)，来源与修改点见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). 权重适用各自发布方的许可证.
 
+## 文档索引
+
+| 主题 | 文档 |
+|---|---|
+| 数字资产流水线（学习视频） | [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) · [Skill](skills/learning-video/SKILL.md) |
+| 部署（ComfyUI / GB10 / Docker） | [DEPLOYMENT.zh.md](DEPLOYMENT.zh.md) |
+| 009jev native SLA（推荐） | [009JEV.md](009JEV.md) |
+| Laya 本地决策引擎（默认） | [LAYA.md](LAYA.md) |
+| OpenJev 本地决策引擎 | [OPENJEV.md](OPENJEV.md) |
+| Jev Adaptive VSA（旧 W4A4 路径） | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
+| 验证记录 | [VALIDATION.md](VALIDATION.md) |
+| 第三方来源 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
+
 ---
 
 # English Documentation
 
-Accelerates MiniMax H3 Ref2VA on RTX 4070 12GB using FC1 W4A4 + Streaming VSA, validated through full generation at 832×1408 / 124 frames / 4 steps.
+**Xpark Media Foundry Agent (`Xpark-Media-Foundry-Agent`)** is a video digital-asset pipeline: it forges documents and image sets into 1080p animated explainer video assets through ingest → storyboard → per-clip generation → QC → ffmpeg concat. The generation layer combines MiniMax-H3 with two acceleration paths, 009jev native SLA and W4A4+VSA, while the decision engines Laya (local) / OpenJev (llama.cpp) / Jev (remote API) allocate per-layer attention keep rates to cut compute and VRAM.
+
+## The Digital-Asset Pipeline
+
+```
+source assets (docx / image set)
+  │ 1. ingest     extract word/media + paragraph structure, pick figures by chapter
+  ▼
+storyboard (narration + motion script per figure)
+  │ 2. scripting  1080p template, per-clip seeds, sequential reveal motion
+  ▼
+clip generation (H3 + 009jev/laya decision acceleration)
+  │ 3. batch      learning_video_1080p.api.json · gen_learning_video.py
+  ▼
+clip assets (5 s · 1920×1080 · 24fps · Chinese narration)
+  │ 4. QC / post  frame sampling + ffprobe + dewatermark + ffmpeg concat
+  ▼
+final cut (digital asset)
+```
+
+| Stage | Carrier | Artifact |
+|---|---|---|
+| 1. Ingest | docx `word/media/` (`unzip`/`zipfile`), paragraph structure | image set (6–10 figures) |
+| 2. Scripting | per-figure `narration` (≤45 chars) + `motion script`, `PROMPT_TMPL` | storyboard `CLIPS` |
+| 3. Per-clip generation | [learning_video_1080p.api.json](examples/learning_video_1080p.api.json), [gen_learning_video.py](skills/learning-video/scripts/gen_learning_video.py) | 5 s 1080p animated clip |
+| 4. QC | head/mid/tail frame sampling, `ffprobe` | clips that pass QC |
+| 5. Post / delivery | `dewatermark.sh` (optional), `concat_learn.sh` | final mp4 (1920×1080 · CRF 18) |
+
+See [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) and the [learning-video skill](skills/learning-video/SKILL.md) for the full walkthrough.
+
+### Pipeline generation engines
+
+| Path | Node | Notes | Doc |
+|---|---|---|---|
+| **009jev native SLA (recommended)** | `H3JevNativeSLAPatch` | plain model + native SLA, no W4A4 conversion, per-layer dynamic keep | [009JEV.en.md](009JEV.en.md) |
+| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 preconversion + fixed/adaptive VSA, fits 12 GB VRAM | [JEV_ADAPTIVE.en.md](JEV_ADAPTIVE.en.md) |
+
+Decision engine, one of three, identical contract and hot-swappable via `H3_DECISION_ENGINE`:
+
+| Engine | Deployment | Notes | Doc |
+|---|---|---|---|
+| Laya (default) | in-process local model | 322M local decision model, offline & free | [LAYA.md](LAYA.md) |
+| OpenJev | local llama-server | GGUF generative decisions, one Q&A at a time | [OPENJEV.md](OPENJEV.md) |
+| Jev | remote TypeSafe API | requires `TYPESAFE_API_KEY` | [JEV_ADAPTIVE.en.md](JEV_ADAPTIVE.en.md) |
+
+Measured on GB10, 5-second 4-step video, warm cache:
+
+| Engine | Time | vs baseline | SSIM vs baseline |
+|---|---:|---:|---:|
+| baseline | 530.2s | — | 1.0 |
+| Laya | 340.1s | −35.9% | 0.761 |
+| OpenJev | 400.1s | −24.5% | 0.760 |
+
+---
+
+## Engine detail: W4A4 + Streaming VSA (RTX 4070 path)
+
+The sections below cover installation, one-time conversion, workflows and validation for the FC1 W4A4 + Streaming VSA path. Accelerates MiniMax H3 Ref2VA on RTX 4070 12GB using FC1 W4A4 + Streaming VSA, validated through full generation at 832×1408 / 124 frames / 4 steps.
 Combines **FC1 Plain ConvRot W4A4, preconverted INT8 Gate, and fixed padding decision cache**.
 Weight conversion is executed once offline; during generation, weights are loaded from CPU using ComfyUI's Dynamic VRAM / offload path.
 
@@ -300,7 +429,7 @@ No additional Turbo/FastH3 LoRAs are used in the bundled workflows.
 Follow these 4 steps to get up and running:
 
 1. **Place this repository in custom_nodes**
-   - Place this repository under `ComfyUI/custom_nodes/ComfyUI-MiniMax-H3-W4A4-VSA/`.
+   - Place this repository under `ComfyUI/custom_nodes/Xpark-Media-Foundry-Agent/`.
    - Ensure external nodes [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) and [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE) are installed.
 2. **Make required models available**
    - Place diffusion, text encoder, and VAE weights into their corresponding `ComfyUI/models/` subdirectories as listed in the table above.
@@ -321,7 +450,7 @@ Run conversion using **ComfyUI's own Python environment**. The example below use
 ```powershell
 $h3Python = '.\python_embeded\python.exe'
 $h3Root = '.\ComfyUI'
-$h3Convert = '.\ComfyUI\custom_nodes\ComfyUI-MiniMax-H3-W4A4-VSA\convert.py'
+$h3Convert = '.\ComfyUI\custom_nodes\Xpark-Media-Foundry-Agent\convert.py'
 
 # 1. Smoke check native INT4 / CPU offload / GPU reload (takes seconds, writes no files)
 & $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root --check --gpu 0

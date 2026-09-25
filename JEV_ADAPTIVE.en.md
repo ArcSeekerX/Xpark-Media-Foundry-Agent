@@ -2,7 +2,7 @@
 
 # Experimental Jev Adaptive VSA
 
-[日语](JEV_ADAPTIVE.md)
+[简体中文](JEV_ADAPTIVE.md)
 
 Branch: `exp/jev-adaptive-vsa`. This page documents **layer_v5, four steps**. This is a reproducible experiment, not a demonstrated acceleration release: fixed5 took212.20s, layer_v5 took219.15s. The under180s/quality target remains unmet. See [results](docs/experiments/README.md).
 
@@ -10,7 +10,7 @@ Branch: `exp/jev-adaptive-vsa`. This page documents **layer_v5, four steps**. Th
 
 Follow the base [README](README.md) for compatible ComfyUI, model weights, Gate weights, preconversion, KJNodes and FastVAE dependencies. Tested on Windows / RTX4070 12GB; other environments require validation. Weights and reference images are not bundled.
 
-After this branch is published, clone it with `git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/sepiablue-ai/ComfyUI-MiniMax-H3-W4A4-VSA.git`. Place one copy under custom_nodes or use this branch's setup.bat. The installer copies Jev modules, examples and docs, but does not install the optional SDK.
+After this branch is published, clone it with `git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/ArcSeekerX/Xpark-Media-Foundry-Agent.git`. Place one copy under custom_nodes or use this branch's setup.bat. The installer copies Jev modules, examples and docs, but does not install the optional SDK.
 
 For adaptive mode only, create a separate SDK environment from the repository directory:
 

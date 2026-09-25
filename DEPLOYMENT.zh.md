@@ -1,6 +1,6 @@
-# MiniMax-H3 视频生成系统部署文档
+# Xpark Media Foundry Agent 数字资产流水线部署文档
 
-本文档记录当前系统中 ComfyUI、MiniMax-H3、Laya 与 OpenJev 决策引擎的安装部署与使用方法。
+本文档记录数字资产流水线的生成引擎部署：ComfyUI、MiniMax-H3、Laya 与 OpenJev 决策引擎的安装与使用方法，供上层的「素材 → 分镜 → 逐片段生成 → 质检 → 拼接成片」流水线调用。
 测试平台：NVIDIA GB10（Grace-Blackwell, aarch64, 121GB 统一内存, sm_121）。
 
 ## 1. 系统总览

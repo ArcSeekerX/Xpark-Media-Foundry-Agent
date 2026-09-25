@@ -9,7 +9,7 @@ import sys
 
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
-NAME = 'ComfyUI-MiniMax-H3-W4A4-VSA'
+NAME = 'Xpark-Media-Foundry-Agent'
 MODEL = 'minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors'
 GATE = 'fasth3_vsa_gate.safetensors'
 DEPENDENCIES = {

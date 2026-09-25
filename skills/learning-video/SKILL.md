@@ -7,7 +7,7 @@ description: 把文档（docx/图片集）的示意图批量生成 1080P 动画�
 
 ## 前置条件
 
-- ComfyUI 服务可用（默认 `http://localhost:8188`），已装本节点包（ComfyUI-MiniMax-H3-W4A4-VSA）
+- ComfyUI 服务可用（默认 `http://localhost:8188`），已装本节点包（Xpark-Media-Foundry-Agent）
 - MiniMax-H3 turbo8 模型 + qwen3vl 文本编码 + 视频/音频 VAE 就位（见仓库 DEPLOYMENT.zh.md）
 - laya 权重在 `models/laya/`（默认决策引擎）；容器内有 ffmpeg
 

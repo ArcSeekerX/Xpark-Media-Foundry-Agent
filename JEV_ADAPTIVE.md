@@ -15,7 +15,7 @@
 获取示例（在本分支发布到远程后可用）：
 
 ```powershell
-git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/sepiablue-ai/ComfyUI-MiniMax-H3-W4A4-VSA.git
+git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/ArcSeekerX/Xpark-Media-Foundry-Agent.git
 ```
 
 在仓库内创建 SDK 专用环境的示例（验证时 SDK 使用的 Python 为 3.10）：
