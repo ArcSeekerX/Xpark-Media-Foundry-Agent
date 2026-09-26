@@ -173,6 +173,10 @@ export interface AgentFlow {
   capabilities?: Capabilities;
   guide: (sentence: string) => Promise<void>;
   editShotPrompt: (shotId: string, positive: string, negative: string) => void;
+  applyPromptPreset: (
+    shotId: string,
+    preset: { name: string; prompt: string; negative?: string },
+  ) => void;
   selectSkill: (sceneId: string, skillId: string) => void;
   importAsset: (
     file: File,
@@ -388,6 +392,27 @@ export function useAgentFlow(): AgentFlow {
       dispatch({ type: "patch_shot", shotId, patch: { prompt: positive, negativePrompt: negative, phase: "PROMPT_READY" } });
     },
     [],
+  );
+
+  const applyPromptPreset = useCallback(
+    (shotId: string, preset: { name: string; prompt: string; negative?: string }) => {
+      const shot = store.current.shots.find((s) => s.shotId === shotId);
+      if (!shot) {
+        say("请先选择一个镜头，再应用提示词预设。", "agent");
+        return;
+      }
+      const positive = `${shot.prompt}\n\n${preset.prompt}`.trim();
+      const negative = preset.negative
+        ? [shot.negativePrompt, preset.negative].filter(Boolean).join(", ")
+        : shot.negativePrompt;
+      dispatch({
+        type: "patch_shot",
+        shotId,
+        patch: { prompt: positive, negativePrompt: negative, phase: "PROMPT_READY" },
+      });
+      say(`已应用提示词预设「${preset.name}」到镜头「${shot.title}」。`, "tool");
+    },
+    [say],
   );
 
   const selectSkill = useCallback(
@@ -1359,6 +1384,7 @@ export function useAgentFlow(): AgentFlow {
     capabilities,
     guide,
     editShotPrompt,
+    applyPromptPreset,
     selectSkill,
     importAsset,
     bindAsset,

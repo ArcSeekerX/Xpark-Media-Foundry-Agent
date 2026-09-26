@@ -104,18 +104,18 @@ function App() {
                   <span>主 Agent</span>
                 </TabsTrigger>
                 <TabsTrigger
-                  value="assets"
-                  className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
-                >
-                  <Layers className="size-5" />
-                  <span>数字资产</span>
-                </TabsTrigger>
-                <TabsTrigger
                   value="studio"
                   className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
                 >
                   <Clapperboard className="size-5" />
                   <span>一键出片</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="assets"
+                  className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
+                >
+                  <Layers className="size-5" />
+                  <span>数字资产</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="system"

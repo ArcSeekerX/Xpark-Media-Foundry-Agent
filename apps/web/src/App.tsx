@@ -18,16 +18,16 @@ export function App() {
           主 Agent
         </button>
         <button
-          className={`btn small ${mode === "assets" ? "primary" : ""}`}
-          onClick={() => setMode("assets")}
-        >
-          数字资产
-        </button>
-        <button
           className={`btn small ${mode === "studio" ? "primary" : ""}`}
           onClick={() => setMode("studio")}
         >
           一键出片
+        </button>
+        <button
+          className={`btn small ${mode === "assets" ? "primary" : ""}`}
+          onClick={() => setMode("assets")}
+        >
+          数字资产
         </button>
         <button
           className={`btn small ${mode === "settings" ? "primary" : ""}`}

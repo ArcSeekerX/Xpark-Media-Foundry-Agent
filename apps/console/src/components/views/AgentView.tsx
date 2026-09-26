@@ -3,6 +3,7 @@ import {
   Activity,
   Bot,
   Clapperboard,
+  Compass,
   Film,
   Image as ImageIcon,
   Layers,
@@ -19,6 +20,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ReferenceAssets, assetUrl } from './ReferenceAssets'
 import { CandidatePanel } from './CandidatePanel'
+import { Collapsible } from '@/components/ui/collapsible'
+import { PresetLibrary } from './PresetLibrary'
 import type { Asset, Shot } from '@/foundry/types'
 
 function firstImageUrl(shot: Shot, assets: Asset[]): string | undefined {
@@ -123,6 +126,28 @@ export function AgentView() {
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-4">
         {/* Left column */}
         <div className="flex flex-col gap-4 xp-stagger">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Compass size={16} className="text-[#76B900]" /> 使用指南
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Collapsible title="主 Agent 完整流程" defaultOpen>
+                <ol className="space-y-1.5 text-xs text-muted-foreground">
+                  <li>1. 用一句话描述需求 → 自动生成场景、分镜、技能与提示词</li>
+                  <li>2. 在「镜头」分组导入参考图 / 生成关键帧（优先复用导入素材）</li>
+                  <li>3. 在「制作」分组编辑提示词、查看质检报告，并按需应用提示词预设</li>
+                  <li>4. 生成后对候选执行 采用 / 弃用 / 重新生成；仅采用版本进入成片</li>
+                  <li>5. 点「剪辑拼接成片」→「素材归档」；所有产物在「数字资产」模块统一管理</li>
+                </ol>
+                <div className="rounded-md bg-muted/30 p-2 text-[11px] text-muted-foreground">
+                  提示：模型、参数、分辨率与素材/成片存储路径在「设置」中配置；已有 md + 图片时可直接用「一键出片」。
+                </div>
+              </Collapsible>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -477,6 +502,20 @@ export function AgentView() {
 
           {rightTab === 'production' && (
             <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles size={16} className="text-[#76B900]" /> 提示词预设库
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PresetLibrary
+                activeShotId={activeShot?.shotId}
+                onApply={(preset) => activeShot && flow.applyPromptPreset(activeShot.shotId, preset)}
+              />
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

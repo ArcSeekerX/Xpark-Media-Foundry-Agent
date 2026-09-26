@@ -10,6 +10,7 @@ import { PromptEditor } from "./PromptEditor";
 import { ExportPanel } from "./ExportPanel";
 import { EventLogView } from "./EventLogView";
 import { ReferenceAssets, assetUrl } from "./ReferenceAssets";
+import { PresetLibrary } from "./PresetLibrary";
 import { CandidatePanel } from "./CandidatePanel";
 import type { Asset } from "../types";
 
@@ -114,6 +115,24 @@ export function AgentPage() {
       <div className="layout">
         {/* Left: conversation + storyboard */}
         <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <section className="card">
+            <header>
+              <h2>0 · 使用指南</h2>
+            </header>
+            <div className="body">
+              <ol className="muted" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.9 }}>
+                <li>用一句话描述需求 → 自动生成场景、分镜、技能与提示词</li>
+                <li>在「镜头」分组导入参考图 / 生成关键帧（优先复用导入素材）</li>
+                <li>在「制作」分组编辑提示词、应用预设并查看质检报告</li>
+                <li>生成后对候选执行 采用 / 弃用 / 重新生成；仅采用版本进入成片</li>
+                <li>点「剪辑拼接成片」→「素材归档」；产物在「数字资产」模块统一管理</li>
+              </ol>
+              <p className="muted" style={{ marginBottom: 0 }}>
+                提示：模型、参数、分辨率与素材/成片存储路径在「设置」中配置；已有 md + 图片时可直接用「一键出片」。
+              </p>
+            </div>
+          </section>
+
           <section className="card">
             <header>
               <h2>1 · 一句话智能引导</h2>
@@ -270,7 +289,19 @@ export function AgentPage() {
             <>
           <section className="card">
             <header>
-              <h2>7 · 提示词与镜头规格</h2>
+              <h2>7 · 提示词预设库</h2>
+            </header>
+            <div className="body">
+              <PresetLibrary
+                activeShotId={activeShot?.shotId}
+                onApply={(preset) => activeShot && flow.applyPromptPreset(activeShot.shotId, preset)}
+              />
+            </div>
+          </section>
+
+          <section className="card">
+            <header>
+              <h2>8 · 提示词与镜头规格</h2>
             </header>
             <div className="body">
               <PromptEditor shot={activeShot} asset={previewAsset} onSave={flow.editShotPrompt} />

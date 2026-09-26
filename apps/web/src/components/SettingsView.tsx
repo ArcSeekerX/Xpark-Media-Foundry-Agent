@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { DEFAULT_SETTINGS, useSettings } from "../settings";
 import type { AppSettings } from "../settings";
@@ -38,6 +38,31 @@ export function SettingsView() {
   const { settings, update, reset } = useSettings();
   const [test, setTest] = useState<Record<string, string>>({});
   const [syncMsg, setSyncMsg] = useState<string>();
+  const [backendPaths, setBackendPaths] = useState<{
+    data_dir?: string;
+    imports_dir?: string;
+    generated_dir?: string;
+    exports_dir?: string;
+  }>();
+
+  const authHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (settings.backendToken) headers.Authorization = `Bearer ${settings.backendToken}`;
+    return headers;
+  };
+
+  useEffect(() => {
+    const base = settings.backendUrl || "/api";
+    let alive = true;
+    fetch(`${base}/settings`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => alive && d && setBackendPaths(d))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.backendUrl, settings.backendToken]);
 
   const setText = (patch: Partial<AppSettings["textModel"]>) =>
     update({ textModel: { ...settings.textModel, ...patch } });
@@ -74,19 +99,22 @@ export function SettingsView() {
 
   const syncStorage = async () => {
     const base = settings.backendUrl || "/api";
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (settings.backendToken) headers.Authorization = `Bearer ${settings.backendToken}`;
     try {
       const r = await fetch(`${base}/settings`, {
         method: "POST",
-        headers,
+        headers: authHeaders(),
         body: JSON.stringify({
           imports_dir: settings.storage.importsDir,
           generated_dir: settings.storage.generatedDir,
           exports_dir: settings.storage.exportsDir,
         }),
       });
-      setSyncMsg(r.ok ? "已同步到后端" : `同步失败 HTTP ${r.status}`);
+      if (r.ok) {
+        setBackendPaths(await r.json());
+        setSyncMsg("已同步到后端");
+      } else {
+        setSyncMsg(`同步失败 HTTP ${r.status}`);
+      }
     } catch {
       setSyncMsg("同步失败：后端不可达");
     }
@@ -382,6 +410,9 @@ export function SettingsView() {
                 value={settings.storage.importsDir}
                 onChange={(e) => setStorage({ importsDir: e.target.value })}
               />
+              <span className="muted" style={{ fontSize: 10, fontFamily: "monospace" }}>
+                完整路径：{backendPaths?.imports_dir ?? "（后端未连接）"}
+              </span>
             </Field>
             <Field label="生成产物目录">
               <input
@@ -389,6 +420,9 @@ export function SettingsView() {
                 value={settings.storage.generatedDir}
                 onChange={(e) => setStorage({ generatedDir: e.target.value })}
               />
+              <span className="muted" style={{ fontSize: 10, fontFamily: "monospace" }}>
+                完整路径：{backendPaths?.generated_dir ?? "（后端未连接）"}
+              </span>
             </Field>
             <Field label="成片导出目录">
               <input
@@ -396,7 +430,15 @@ export function SettingsView() {
                 value={settings.storage.exportsDir}
                 onChange={(e) => setStorage({ exportsDir: e.target.value })}
               />
+              <span className="muted" style={{ fontSize: 10, fontFamily: "monospace" }}>
+                完整路径：{backendPaths?.exports_dir ?? "（后端未连接）"}
+              </span>
             </Field>
+            {backendPaths?.data_dir && (
+              <span className="muted" style={{ fontSize: 10, fontFamily: "monospace" }}>
+                数据根目录：{backendPaths.data_dir}
+              </span>
+            )}
             <div className="row">
               <button className="btn small" onClick={() => void syncStorage()}>
                 同步存储路径到后端
