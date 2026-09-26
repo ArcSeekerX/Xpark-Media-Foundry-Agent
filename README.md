@@ -93,17 +93,23 @@ PATH=/opt/node22/bin:$PATH npm run preview   # http://0.0.0.0:5000
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/health` | 后端与 ComfyUI 健康状态 |
+| `GET /api/health` | 后端与 ComfyUI 健康状态（公开） |
+| `GET /api/capabilities` | 模型能力表（参考图上限、fps、ffmpeg 可用性） |
+| `GET /api/events?project_id=&since=` | SSE 事件流（seq 游标 + id 去重 + keep-alive） |
 | `GET /api/comfy/view?filename=&subfolder=&type=` | 代理 ComfyUI 产物（图片/视频） |
+| `GET /api/exports/{name}` | 下载/播放后端合成的成片 |
 | `POST /api/images/jobs` | 提交文生图（默认 Qwen Image 2.1 7B 模板），可携带参考图 |
 | `GET /api/images/jobs/{id}` | 查询生图任务与产物 |
 | `POST /api/videos/jobs` | 提交 MiniMax H3 参考生视频任务 |
 | `GET /api/videos/jobs/{id}` | 查询生视频任务与产物 |
+| `POST /api/productions/compose` | ffmpeg 合成已采用片段；无 ffmpeg 时返回 503，前端降级为片段预览 |
 
 ```bash
 # 启动生成后端（默认连接 http://127.0.0.1:8188 的 ComfyUI）
 python3 apps/api/server.py --port 8080
-# 零依赖自测（内置假 ComfyUI，无需 GPU / 模型）
+# 可选：启用鉴权（Bearer 或 SSE ?token=）与 CORS 白名单
+API_TOKEN=secret ALLOWED_ORIGINS=http://localhost:5173 python3 apps/api/server.py
+# 零依赖自测（内置假 ComfyUI，无需 GPU / 模型，含 SSE/鉴权/能力/合成降级）
 python3 apps/api/test_server.py
 ```
 
@@ -122,6 +128,12 @@ python3 apps/api/test_server.py
 | `VITE_IMAGE_SAMPLER` | `euler` | 生图采样器 |
 | `VITE_IMAGE_CFG` | 4 | 生图 CFG |
 | `VITE_IMAGE_ENABLED` | `1` | 设为 `0` 关闭生图步骤 |
+| `VITE_API_TOKEN` | 空 | 业务后端 Bearer token（对应后端 `API_TOKEN`） |
+| `VITE_SSE` | `1` | 设为 `0` 关闭 SSE 事件流接入 |
+| `VITE_ROUTING_SHADOW` | `1` | 智能路由影子模式：记录模型建议但执行规则 |
+| `VITE_ROUTING_AUTO` | `0` | 设为 `1` 关闭影子，采用通过校验的模型动作 |
+| `VITE_ROUTING_MIN_CONF` | `0.5` | 采用模型动作的最小置信度 |
+| `VITE_PERSIST` | `1` | 设为 `0` 关闭 localStorage 流程持久化 |
 
 主 Agent 流程：一句话 → 场景 / 分镜 / 技能 → **参考图导入与绑定（优先复用）→ 缺素材时生成关键帧** → 视频生成（携带参考图）→ 质检 → 修复 → 剪辑 → 归档。导入的参考图会随渲染请求上传到后端 / ComfyUI，用作文生视频的角色条件；被决策端口判定为 `prefer_imported` 时优先复用导入素材、跳过生图。
 
@@ -308,6 +320,10 @@ API 版与 GUI 用 JSON 不同，需要以 `{"prompt": <API JSON>, "client_id": 
 
 | 主题 | 文档 |
 |---|---|
+| 优化规划与架构完善 | [docs/OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md) |
+| 总体架构图（SVG） | [docs/architecture.svg](docs/architecture.svg) |
+| 主 Agent 流程与智能路由（SVG） | [docs/agent-flow.svg](docs/agent-flow.svg) |
+| 模块图标集（SVG symbol） | [docs/icons.svg](docs/icons.svg) |
 | 数字资产流水线（学习视频） | [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) · [Skill](skills/learning-video/SKILL.md) |
 | 控制台（主 Agent / 系统监控 / 在线对话） | [apps/console](apps/console) · [apps/web](apps/web) |
 | 部署（ComfyUI / GB10 / Docker） | [DEPLOYMENT.zh.md](DEPLOYMENT.zh.md) |

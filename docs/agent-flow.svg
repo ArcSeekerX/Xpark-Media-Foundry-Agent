@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1020" font-family="'PingFang SC','Microsoft YaHei',system-ui,-apple-system,sans-serif" role="img" aria-labelledby="flowTitle flowDesc">
+  <title id="flowTitle">主 Agent 生产流程 · 智能路由与候选重生成</title>
+  <desc id="flowDesc">从素材输入到成片的流程，包含智能路由分支、质检修复闭环、候选采用/弃用/重新生成与废图废视频回收站。</desc>
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#60769c"/></marker>
+    <marker id="ag" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#0b7a5f"/></marker>
+    <marker id="ao" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#d97706"/></marker>
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#b91c1c"/></marker>
+    <marker id="ap" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#7c3aed"/></marker>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/></filter>
+  </defs>
+
+  <rect width="1600" height="1020" fill="#f6f8fb"/>
+  <text x="40" y="50" font-size="27" font-weight="750" fill="#0f172a">主 Agent 生产流程 · 智能路由 + 候选重生成</text>
+  <text x="40" y="76" font-size="13" fill="#64748b">一句话 / md+图片 → 分镜 → 智能路由 → 生成 → 质检 → 采用 / 弃用 / 重新生成 → 剪辑成片</text>
+  <rect x="40" y="90" width="1520" height="2" fill="#dbe3ee"/>
+
+  <!-- Row A: pipeline -->
+  <g filter="url(#s)">
+    <rect x="40" y="140" width="180" height="86" rx="12" fill="#ffffff" stroke="#d9e1ec"/>
+    <rect x="40" y="140" width="4" height="86" rx="2" fill="#64748b"/>
+    <text x="58" y="170" font-size="14" font-weight="650" fill="#0f172a">输入</text>
+    <text x="58" y="190" font-size="11" fill="#64748b">一句话需求</text>
+    <text x="58" y="206" font-size="11" fill="#64748b">md / 图片素材</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="260" y="140" width="180" height="86" rx="12" fill="#ffffff" stroke="#cfe0ff"/>
+    <rect x="260" y="140" width="4" height="86" rx="2" fill="#2563eb"/>
+    <text x="278" y="170" font-size="14" font-weight="650" fill="#0f172a">解析与分镜</text>
+    <text x="278" y="190" font-size="11" fill="#64748b">Planner / 技能</text>
+    <text x="278" y="206" font-size="11" fill="#64748b">ShotSpec · Prompt</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="480" y="140" width="180" height="86" rx="12" fill="#ffffff" stroke="#c7e8f2"/>
+    <rect x="480" y="140" width="4" height="86" rx="2" fill="#0891b2"/>
+    <text x="498" y="170" font-size="14" font-weight="650" fill="#0f172a">素材准备</text>
+    <text x="498" y="190" font-size="11" fill="#64748b">导入 / 复用 / 缺口</text>
+    <text x="498" y="206" font-size="11" fill="#64748b">绑定 AssetBinding</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="700" y="132" width="180" height="102" rx="12" fill="#f5f1ff" stroke="#7c3aed" stroke-width="1.8"/>
+    <rect x="700" y="132" width="4" height="102" rx="2" fill="#7c3aed"/>
+    <text x="718" y="162" font-size="14" font-weight="700" fill="#4c1d95">智能路由</text>
+    <text x="718" y="182" font-size="11" fill="#5b21b6">规则 + 小模型</text>
+    <text x="718" y="198" font-size="11" fill="#5b21b6">影子→自动</text>
+    <text x="718" y="214" font-size="11" fill="#5b21b6">低置信回退</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="920" y="140" width="180" height="86" rx="12" fill="#ffffff" stroke="#c9ead9"/>
+    <rect x="920" y="140" width="4" height="86" rx="2" fill="#0b7a5f"/>
+    <text x="938" y="170" font-size="14" font-weight="650" fill="#0f172a">生成</text>
+    <text x="938" y="190" font-size="11" fill="#64748b">关键帧生图</text>
+    <text x="938" y="206" font-size="11" fill="#64748b">→ 视频生成</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="1140" y="140" width="180" height="86" rx="12" fill="#ffffff" stroke="#c7e8f2"/>
+    <rect x="1140" y="140" width="4" height="86" rx="2" fill="#0891b2"/>
+    <text x="1158" y="170" font-size="14" font-weight="650" fill="#0f172a">质检 Judge</text>
+    <text x="1158" y="190" font-size="11" fill="#64748b">硬检查 · 语义</text>
+    <text x="1158" y="206" font-size="11" fill="#64748b">证据 · 分数</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="1360" y="140" width="180" height="86" rx="12" fill="#fff7ec" stroke="#f0e2ce"/>
+    <rect x="1360" y="140" width="4" height="86" rx="2" fill="#d97706"/>
+    <text x="1378" y="170" font-size="14" font-weight="650" fill="#0f172a">交付</text>
+    <text x="1378" y="190" font-size="11" fill="#64748b">采用版本</text>
+    <text x="1378" y="206" font-size="11" fill="#64748b">剪辑 / 归档</text>
+  </g>
+
+  <path d="M220 183 H254" stroke="#60769c" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M440 183 H474" stroke="#60769c" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M660 183 H694" stroke="#7c3aed" stroke-width="2" marker-end="url(#ap)"/>
+  <path d="M880 183 H914" stroke="#0b7a5f" stroke-width="2" marker-end="url(#ag)"/>
+  <path d="M1100 183 H1134" stroke="#60769c" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M1320 183 H1354" stroke="#0b7a5f" stroke-width="2" marker-end="url(#ag)"/>
+
+  <!-- Row B: routing outcomes -->
+  <path d="M790 234 V286" stroke="#7c3aed" stroke-width="2" marker-end="url(#ap)"/>
+  <rect x="600" y="292" width="820" height="126" rx="14" fill="#faf8ff" stroke="#e2dcf5"/>
+  <text x="620" y="320" font-size="13" font-weight="700" fill="#4c1d95">智能路由决策 · 候选动作</text>
+  <text x="620" y="340" font-size="11" fill="#7c3aed">规则排除不可执行项 → 小模型结构化建议 → 校验阈值 → 执行或回退</text>
+  <g filter="url(#s)">
+    <rect x="620" y="352" width="182" height="50" rx="10" fill="#ffffff" stroke="#ddd0f4"/>
+    <text x="636" y="374" font-size="12.5" font-weight="650" fill="#0f172a">复用导入素材</text>
+    <text x="636" y="391" font-size="10.5" fill="#64748b">reuse_imported · 免生图</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="816" y="352" width="182" height="50" rx="10" fill="#ffffff" stroke="#ddd0f4"/>
+    <text x="832" y="374" font-size="12.5" font-weight="650" fill="#0f172a">复用视频片段</text>
+    <text x="832" y="391" font-size="10.5" fill="#64748b">reuse_clip · 标准化质检</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="1012" y="352" width="182" height="50" rx="10" fill="#ffffff" stroke="#ddd0f4"/>
+    <text x="1028" y="374" font-size="12.5" font-weight="650" fill="#0f172a">图像条件生成</text>
+    <text x="1028" y="391" font-size="10.5" fill="#64748b">image_conditioned</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="1208" y="352" width="182" height="50" rx="10" fill="#ffffff" stroke="#ddd0f4"/>
+    <text x="1224" y="374" font-size="12.5" font-weight="650" fill="#0f172a">直接生成</text>
+    <text x="1224" y="391" font-size="10.5" fill="#64748b">generate · 文本条件</text>
+  </g>
+  <path d="M1299 352 V300 H1000 V234" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ap)"/>
+
+  <!-- Row C: QC branches -->
+  <path d="M1180 226 V492 H1080" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#ao)"/>
+  <rect x="860" y="452" width="220" height="84" rx="12" fill="#fff8ec" stroke="#e7cfab" filter="url(#s)"/>
+  <rect x="860" y="452" width="4" height="84" rx="2" fill="#d97706"/>
+  <text x="878" y="482" font-size="14" font-weight="650" fill="#92400e">修复 Agent</text>
+  <text x="878" y="502" font-size="11" fill="#8a5a1e">改提示词 / 素材 / 参数</text>
+  <text x="878" y="518" font-size="11" fill="#8a5a1e">受重试预算约束</text>
+  <path d="M860 494 C 700 494 700 300 920 236" fill="none" stroke="#d97706" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#ao)"/>
+  <text x="690" y="470" font-size="11" fill="#b45309">回退到可复用起点</text>
+
+  <path d="M1320 226 V452" stroke="#b45309" stroke-width="2" marker-end="url(#ao)"/>
+  <rect x="1320" y="452" width="220" height="84" rx="12" fill="#fff8ec" stroke="#e7cfab" filter="url(#s)"/>
+  <rect x="1320" y="452" width="4" height="84" rx="2" fill="#b45309"/>
+  <text x="1338" y="482" font-size="14" font-weight="650" fill="#92400e">人工复核</text>
+  <text x="1338" y="502" font-size="11" fill="#8a5a1e">预算耗尽 / 不确定</text>
+  <text x="1338" y="518" font-size="11" fill="#8a5a1e">接受 / 驳回 / 修改</text>
+
+  <!-- Row D: candidate management -->
+  <path d="M1010 226 V646" stroke="#0b7a5f" stroke-width="2" marker-end="url(#ag)"/>
+  <rect x="300" y="652" width="800" height="140" rx="14" fill="#f2fbf6" stroke="#c9ead9"/>
+  <text x="322" y="682" font-size="13" font-weight="700" fill="#065f46">候选管理 · 每个生成产物可决策</text>
+  <text x="322" y="702" font-size="11" fill="#0b7a5f">保留全部候选与证据；采用版本才参与成片</text>
+  <g filter="url(#s)">
+    <rect x="322" y="716" width="170" height="54" rx="10" fill="#ffffff" stroke="#a7d8bf"/>
+    <text x="338" y="740" font-size="12.5" font-weight="650" fill="#065f46">采用 Accept</text>
+    <text x="338" y="758" font-size="10.5" fill="#64748b">进入合成清单</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="506" y="716" width="170" height="54" rx="10" fill="#ffffff" stroke="#f0c4c4"/>
+    <text x="522" y="740" font-size="12.5" font-weight="650" fill="#991b1b">弃用 Discard</text>
+    <text x="522" y="758" font-size="10.5" fill="#64748b">标记原因 · 留证</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="690" y="716" width="190" height="54" rx="10" fill="#ffffff" stroke="#a7d8bf"/>
+    <text x="706" y="740" font-size="12.5" font-weight="650" fill="#065f46">重新生成 Regenerate</text>
+    <text x="706" y="758" font-size="10.5" fill="#64748b">新 attempt · 新 seed</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="894" y="716" width="184" height="54" rx="10" fill="#ffffff" stroke="#cfe0ff"/>
+    <text x="910" y="740" font-size="12.5" font-weight="650" fill="#1e3a8a">变体策略</text>
+    <text x="910" y="758" font-size="10.5" fill="#64748b">seed / prompt / 参考图</text>
+  </g>
+
+  <!-- Recycle bin -->
+  <rect x="1140" y="652" width="380" height="140" rx="14" fill="#fdf3f3" stroke="#f0c4c4" filter="url(#s)"/>
+  <rect x="1140" y="652" width="4" height="140" rx="2" fill="#b91c1c"/>
+  <text x="1162" y="684" font-size="14" font-weight="700" fill="#991b1b">废图 / 废视频回收站</text>
+  <text x="1162" y="706" font-size="11" fill="#7f1d1d">弃用产物集中存放，默认不参与合成</text>
+  <text x="1162" y="726" font-size="11" fill="#7f1d1d">记录原因标签：身份漂移 / 动作不全 / 构图不符 / 闪烁</text>
+  <text x="1162" y="746" font-size="11" fill="#7f1d1d">支持从回收站一键重生成或恢复比较</text>
+  <text x="1162" y="770" font-size="11" fill="#b91c1c">审计可追溯 · 保留旧版本用于对比</text>
+  <path d="M676 716 C 640 620 900 600 1120 700" fill="none" stroke="#b91c1c" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#ar)"/>
+  <path d="M1140 722 C 1000 660 1000 420 1010 226" fill="none" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#ar)"/>
+  <text x="1030" y="620" font-size="10.5" fill="#b91c1c">回收站 → 重生成</text>
+
+  <!-- Row E: delivery -->
+  <path d="M407 770 V852" stroke="#0b7a5f" stroke-width="2" marker-end="url(#ag)"/>
+  <g filter="url(#s)">
+    <rect x="300" y="856" width="230" height="80" rx="12" fill="#ffffff" stroke="#f0e2ce"/>
+    <rect x="300" y="856" width="4" height="80" rx="2" fill="#d97706"/>
+    <text x="318" y="888" font-size="14" font-weight="650" fill="#0f172a">剪辑合成</text>
+    <text x="318" y="908" font-size="11" fill="#64748b">FFmpeg concat</text>
+    <text x="318" y="924" font-size="11" fill="#64748b">仅采用已验收镜头</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="570" y="856" width="230" height="80" rx="12" fill="#ffffff" stroke="#f0e2ce"/>
+    <rect x="570" y="856" width="4" height="80" rx="2" fill="#d97706"/>
+    <text x="588" y="888" font-size="14" font-weight="650" fill="#0f172a">成片</text>
+    <text x="588" y="908" font-size="11" fill="#64748b">final.mp4</text>
+    <text x="588" y="924" font-size="11" fill="#64748b">整片复核</text>
+  </g>
+  <g filter="url(#s)">
+    <rect x="840" y="856" width="230" height="80" rx="12" fill="#ffffff" stroke="#f0e2ce"/>
+    <rect x="840" y="856" width="4" height="80" rx="2" fill="#d97706"/>
+    <text x="858" y="888" font-size="14" font-weight="650" fill="#0f172a">归档</text>
+    <text x="858" y="908" font-size="11" fill="#64748b">manifest · 审计</text>
+    <text x="858" y="924" font-size="11" fill="#64748b">指标与追踪</text>
+  </g>
+  <path d="M530 896 H564" stroke="#60769c" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M800 896 H834" stroke="#60769c" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- Legend -->
+  <g transform="translate(1140,880)">
+    <text x="0" y="0" font-size="11" font-weight="700" fill="#64748b">图例</text>
+    <rect x="0" y="12" width="16" height="10" rx="3" fill="#7c3aed"/>
+    <text x="24" y="21" font-size="11" fill="#475569">智能路由</text>
+    <rect x="110" y="12" width="16" height="10" rx="3" fill="#0b7a5f"/>
+    <text x="134" y="21" font-size="11" fill="#475569">生成/采用</text>
+    <rect x="220" y="12" width="16" height="10" rx="3" fill="#d97706"/>
+    <text x="244" y="21" font-size="11" fill="#475569">修复/人审</text>
+    <rect x="0" y="32" width="16" height="10" rx="3" fill="#b91c1c"/>
+    <text x="24" y="41" font-size="11" fill="#475569">弃用/回收</text>
+    <line x1="110" y1="37" x2="150" y2="37" stroke="#60769c" stroke-width="2" stroke-dasharray="6 5"/>
+    <text x="156" y="41" font-size="11" fill="#475569">回退/重生成</text>
+  </g>
+</svg>

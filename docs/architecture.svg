@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 980" font-family="'PingFang SC','Microsoft YaHei',system-ui,-apple-system,sans-serif" role="img" aria-labelledby="archTitle archDesc">
+  <title id="archTitle">Xpark Media Foundry 总体架构</title>
+  <desc id="archDesc">Web 体验、编排与智能路由、创作与资产、生成与质检、交付与恢复五层，以及共享基础设施。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8" fill="#60769c"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8" fill="#0b7a5f"/>
+    </marker>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="980" fill="#f6f8fb"/>
+  <text x="40" y="52" font-size="27" font-weight="750" fill="#0f172a">Xpark Media Foundry · 总体架构</text>
+  <text x="40" y="78" font-size="13" fill="#64748b">Web 优先 · 导入优先 · 智能路由 · 生成/质检闭环 · 废图废视频可重生成 · DGX Spark / ComfyUI</text>
+  <rect x="40" y="92" width="1360" height="2" fill="#dbe3ee"/>
+
+  <!-- Layer 1: Web -->
+  <g>
+    <rect x="24" y="112" width="1392" height="132" rx="16" fill="#eef4ff" stroke="#d7e5fa"/>
+    <text x="46" y="140" font-size="12" font-weight="700" fill="#2563eb">01 · WEB</text>
+    <text x="46" y="166" font-size="16" font-weight="700" fill="#1e3a8a">Web 体验层</text>
+    <text x="46" y="188" font-size="11" fill="#5b6b84">浏览器优先</text>
+    <text x="46" y="205" font-size="11" fill="#5b6b84">不直连模型</text>
+    <text x="46" y="222" font-size="11" fill="#5b6b84">事件驱动</text>
+
+    <g filter="url(#soft)">
+      <rect x="190" y="158" width="294" height="66" rx="12" fill="#ffffff" stroke="#cfe0ff"/>
+      <rect x="190" y="158" width="4" height="66" rx="2" fill="#2563eb"/>
+      <text x="206" y="184" font-size="14" font-weight="650" fill="#0f172a">主 Agent 工作台</text>
+      <text x="206" y="204" font-size="11" fill="#64748b">一句话引导 · 分镜 · 参考图 · 生成质检</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="500" y="158" width="294" height="66" rx="12" fill="#ffffff" stroke="#cfe0ff"/>
+      <rect x="500" y="158" width="4" height="66" rx="2" fill="#2563eb"/>
+      <text x="516" y="184" font-size="14" font-weight="650" fill="#0f172a">一键出片</text>
+      <text x="516" y="204" font-size="11" fill="#64748b">md + 图片 → 直出视频 · 参数化</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="810" y="158" width="294" height="66" rx="12" fill="#ffffff" stroke="#cfe0ff"/>
+      <rect x="810" y="158" width="4" height="66" rx="2" fill="#2563eb"/>
+      <text x="826" y="184" font-size="14" font-weight="650" fill="#0f172a">系统监控</text>
+      <text x="826" y="204" font-size="11" fill="#64748b">GPU/内存/引擎指标 · 远程节点</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="1120" y="158" width="294" height="66" rx="12" fill="#ffffff" stroke="#cfe0ff"/>
+      <rect x="1120" y="158" width="4" height="66" rx="2" fill="#2563eb"/>
+      <text x="1136" y="184" font-size="14" font-weight="650" fill="#0f172a">在线对话 / 候选审阅</text>
+      <text x="1136" y="204" font-size="11" fill="#64748b">多会话 · 候选对比 · 采用/弃用</text>
+    </g>
+  </g>
+
+  <path d="M107 244 V268" stroke="#60769c" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Layer 2: Orchestration -->
+  <g>
+    <rect x="24" y="260" width="1392" height="132" rx="16" fill="#f3f0fc" stroke="#e2dcf5"/>
+    <text x="46" y="288" font-size="12" font-weight="700" fill="#7c3aed">02 · CONTROL</text>
+    <text x="46" y="314" font-size="16" font-weight="700" fill="#4c1d95">编排与智能路由</text>
+    <text x="46" y="336" font-size="11" fill="#5b6b84">规则 + 小模型</text>
+    <text x="46" y="353" font-size="11" fill="#5b6b84">影子→自动</text>
+    <text x="46" y="370" font-size="11" fill="#5b6b84">可回退</text>
+
+    <g filter="url(#soft)">
+      <rect x="190" y="306" width="232" height="66" rx="12" fill="#ffffff" stroke="#ddd0f4"/>
+      <rect x="190" y="306" width="4" height="66" rx="2" fill="#7c3aed"/>
+      <text x="206" y="332" font-size="13" font-weight="650" fill="#0f172a">Orchestrator</text>
+      <text x="206" y="352" font-size="11" fill="#64748b">状态机 · 预算 · 幂等</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="438" y="306" width="232" height="66" rx="12" fill="#f5f1ff" stroke="#7c3aed" stroke-width="1.6"/>
+      <rect x="438" y="306" width="4" height="66" rx="2" fill="#7c3aed"/>
+      <text x="454" y="332" font-size="13" font-weight="700" fill="#4c1d95">智能路由 Router</text>
+      <text x="454" y="352" font-size="11" fill="#64748b">复用/生成/修复/人审 选择</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="686" y="306" width="232" height="66" rx="12" fill="#ffffff" stroke="#ddd0f4"/>
+      <rect x="686" y="306" width="4" height="66" rx="2" fill="#7c3aed"/>
+      <text x="702" y="332" font-size="13" font-weight="650" fill="#0f172a">Decision Port</text>
+      <text x="702" y="352" font-size="11" fill="#64748b">Laya / Jev · 结构化建议</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="934" y="306" width="232" height="66" rx="12" fill="#ffffff" stroke="#ddd0f4"/>
+      <rect x="934" y="306" width="4" height="66" rx="2" fill="#7c3aed"/>
+      <text x="950" y="332" font-size="13" font-weight="650" fill="#0f172a">Skill Router</text>
+      <text x="950" y="352" font-size="11" fill="#64748b">场景技能匹配 · 提示词模板</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="1182" y="306" width="232" height="66" rx="12" fill="#ffffff" stroke="#ddd0f4"/>
+      <rect x="1182" y="306" width="4" height="66" rx="2" fill="#7c3aed"/>
+      <text x="1198" y="332" font-size="13" font-weight="650" fill="#0f172a">能力表 / 预算</text>
+      <text x="1198" y="352" font-size="11" fill="#64748b">模型能力 · 重试预算 · 阈值</text>
+    </g>
+  </g>
+
+  <path d="M107 392 V416" stroke="#60769c" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Layer 3: Creative / Asset -->
+  <g>
+    <rect x="24" y="408" width="1392" height="132" rx="16" fill="#eaf7fb" stroke="#d3edf5"/>
+    <text x="46" y="436" font-size="12" font-weight="700" fill="#0891b2">03 · CREATIVE</text>
+    <text x="46" y="462" font-size="16" font-weight="700" fill="#155e75">创作与资产</text>
+    <text x="46" y="484" font-size="11" fill="#5b6b84">导入优先</text>
+    <text x="46" y="501" font-size="11" fill="#5b6b84">按需生成</text>
+    <text x="46" y="518" font-size="11" fill="#5b6b84">版本一致</text>
+
+    <g filter="url(#soft)">
+      <rect x="190" y="454" width="294" height="66" rx="12" fill="#ffffff" stroke="#c7e8f2"/>
+      <rect x="190" y="454" width="4" height="66" rx="2" fill="#0891b2"/>
+      <text x="206" y="480" font-size="14" font-weight="650" fill="#0f172a">素材摄取 / 导入</text>
+      <text x="206" y="500" font-size="11" fill="#64748b">md/图片/视频 · 校验 · 去重 · 预览</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="500" y="454" width="294" height="66" rx="12" fill="#ffffff" stroke="#c7e8f2"/>
+      <rect x="500" y="454" width="4" height="66" rx="2" fill="#0891b2"/>
+      <text x="516" y="480" font-size="14" font-weight="650" fill="#0f172a">Asset Store</text>
+      <text x="516" y="500" font-size="11" fill="#64748b">导入/生成/衍生 · 绑定 · 版本</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="810" y="454" width="294" height="66" rx="12" fill="#ffffff" stroke="#c7e8f2"/>
+      <rect x="810" y="454" width="4" height="66" rx="2" fill="#0891b2"/>
+      <text x="826" y="480" font-size="14" font-weight="650" fill="#0f172a">分镜 Planner</text>
+      <text x="826" y="500" font-size="11" fill="#64748b">剧本→场景/镜头 · ShotSpec</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="1120" y="454" width="294" height="66" rx="12" fill="#ffffff" stroke="#c7e8f2"/>
+      <rect x="1120" y="454" width="4" height="66" rx="2" fill="#0891b2"/>
+      <text x="1136" y="480" font-size="14" font-weight="650" fill="#0f172a">提示词 Agent</text>
+      <text x="1136" y="500" font-size="11" fill="#64748b">PromptSpec · 变体 · 失败差异</text>
+    </g>
+  </g>
+
+  <path d="M107 540 V564" stroke="#60769c" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Layer 4: Generation / QC -->
+  <g>
+    <rect x="24" y="556" width="1392" height="132" rx="16" fill="#eaf7f1" stroke="#d3ecdf"/>
+    <text x="46" y="584" font-size="12" font-weight="700" fill="#0b7a5f">04 · EXECUTION</text>
+    <text x="46" y="610" font-size="16" font-weight="700" fill="#065f46">生成与质检</text>
+    <text x="46" y="632" font-size="11" fill="#5b6b84">本地 GPU</text>
+    <text x="46" y="649" font-size="11" fill="#5b6b84">证据验收</text>
+    <text x="46" y="666" font-size="11" fill="#5b6b84">有限重试</text>
+
+    <g filter="url(#soft)">
+      <rect x="190" y="602" width="232" height="66" rx="12" fill="#ffffff" stroke="#c9ead9"/>
+      <rect x="190" y="602" width="4" height="66" rx="2" fill="#0b7a5f"/>
+      <text x="206" y="628" font-size="13" font-weight="650" fill="#0f172a">关键帧生图</text>
+      <text x="206" y="648" font-size="11" fill="#64748b">Qwen Image 2.1 7B</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="438" y="602" width="232" height="66" rx="12" fill="#ffffff" stroke="#c9ead9"/>
+      <rect x="438" y="602" width="4" height="66" rx="2" fill="#0b7a5f"/>
+      <text x="454" y="628" font-size="13" font-weight="650" fill="#0f172a">视频生成</text>
+      <text x="454" y="648" font-size="11" fill="#64748b">MiniMax H3 · Ref2VA</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="686" y="602" width="232" height="66" rx="12" fill="#ffffff" stroke="#c9ead9"/>
+      <rect x="686" y="602" width="4" height="66" rx="2" fill="#0b7a5f"/>
+      <text x="702" y="628" font-size="13" font-weight="650" fill="#0f172a">ComfyUI Adapter</text>
+      <text x="702" y="648" font-size="11" fill="#64748b">模板注入 · 参考图上传 · 轮询</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="934" y="602" width="232" height="66" rx="12" fill="#ffffff" stroke="#c9ead9"/>
+      <rect x="934" y="602" width="4" height="66" rx="2" fill="#0b7a5f"/>
+      <text x="950" y="628" font-size="13" font-weight="650" fill="#0f172a">质检 Judge</text>
+      <text x="950" y="648" font-size="11" fill="#64748b">硬检查 · 语义 · 证据片段</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="1182" y="602" width="232" height="66" rx="12" fill="#ffffff" stroke="#c9ead9"/>
+      <rect x="1182" y="602" width="4" height="66" rx="2" fill="#0b7a5f"/>
+      <text x="1198" y="628" font-size="13" font-weight="650" fill="#0f172a">修复 Agent</text>
+      <text x="1198" y="648" font-size="11" fill="#64748b">改提示词/素材/参数/人审</text>
+    </g>
+  </g>
+
+  <path d="M107 688 V712" stroke="#60769c" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Layer 5: Delivery -->
+  <g>
+    <rect x="24" y="704" width="1392" height="132" rx="16" fill="#fff7ec" stroke="#f0e2ce"/>
+    <text x="46" y="732" font-size="12" font-weight="700" fill="#b45309">05 · DELIVERY</text>
+    <text x="46" y="758" font-size="16" font-weight="700" fill="#92400e">交付与恢复</text>
+    <text x="46" y="780" font-size="11" fill="#5b6b84">有限重试</text>
+    <text x="46" y="797" font-size="11" fill="#5b6b84">人工接管</text>
+    <text x="46" y="814" font-size="11" fill="#5b6b84">可追溯</text>
+
+    <g filter="url(#soft)">
+      <rect x="190" y="750" width="294" height="66" rx="12" fill="#ffffff" stroke="#f0e2ce"/>
+      <rect x="190" y="750" width="4" height="66" rx="2" fill="#d97706"/>
+      <text x="206" y="776" font-size="14" font-weight="650" fill="#0f172a">剪辑合成</text>
+      <text x="206" y="796" font-size="11" fill="#64748b">FFmpeg concat · 仅采用已验收</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="500" y="750" width="294" height="66" rx="12" fill="#ffffff" stroke="#f0e2ce"/>
+      <rect x="500" y="750" width="4" height="66" rx="2" fill="#d97706"/>
+      <text x="516" y="776" font-size="14" font-weight="650" fill="#0f172a">成片 / 归档</text>
+      <text x="516" y="796" font-size="11" fill="#64748b">final.mp4 · manifest · 审计</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="810" y="750" width="294" height="66" rx="12" fill="#ffffff" stroke="#f0e2ce"/>
+      <rect x="810" y="750" width="4" height="66" rx="2" fill="#d97706"/>
+      <text x="826" y="776" font-size="14" font-weight="650" fill="#0f172a">人审 / 恢复</text>
+      <text x="826" y="796" font-size="11" fill="#64748b">暂停/取消/续跑 · 迟到结果拒绝</text>
+    </g>
+    <g filter="url(#soft)">
+      <rect x="1120" y="750" width="294" height="66" rx="12" fill="#fffaf0" stroke="#e7c98f" stroke-width="1.6"/>
+      <rect x="1120" y="750" width="4" height="66" rx="2" fill="#d97706"/>
+      <text x="1136" y="776" font-size="14" font-weight="700" fill="#92400e">废图 / 废视频回收站</text>
+      <text x="1136" y="796" font-size="11" fill="#64748b">弃用留证 · 一键重生成 · 变体</text>
+    </g>
+  </g>
+
+  <!-- Foundation -->
+  <g>
+    <rect x="24" y="852" width="1392" height="96" rx="16" fill="#eef2f7" stroke="#d9e1ec"/>
+    <text x="46" y="880" font-size="12" font-weight="700" fill="#475569">SHARED FOUNDATION</text>
+    <text x="46" y="902" font-size="11" fill="#5b6b84">所有模块共享</text>
+    <text x="46" y="919" font-size="11" fill="#5b6b84">持久化与运行底座</text>
+    <g>
+      <rect x="190" y="874" width="232" height="52" rx="10" fill="#ffffff" stroke="#d9e1ec"/>
+      <text x="206" y="896" font-size="12.5" font-weight="650" fill="#0f172a">业务后端</text>
+      <text x="206" y="913" font-size="10.5" fill="#64748b">FastAPI · REST · SSE</text>
+    </g>
+    <g>
+      <rect x="438" y="874" width="232" height="52" rx="10" fill="#ffffff" stroke="#d9e1ec"/>
+      <text x="454" y="896" font-size="12.5" font-weight="650" fill="#0f172a">ComfyUI</text>
+      <text x="454" y="913" font-size="10.5" fill="#64748b">冻结工作流 · GPU</text>
+    </g>
+    <g>
+      <rect x="686" y="874" width="232" height="52" rx="10" fill="#ffffff" stroke="#d9e1ec"/>
+      <text x="702" y="896" font-size="12.5" font-weight="650" fill="#0f172a">状态 / 持久化</text>
+      <text x="702" y="913" font-size="10.5" fill="#64748b">Project/Run/StepRun</text>
+    </g>
+    <g>
+      <rect x="934" y="874" width="232" height="52" rx="10" fill="#ffffff" stroke="#d9e1ec"/>
+      <text x="950" y="896" font-size="12.5" font-weight="650" fill="#0f172a">事件总线</text>
+      <text x="950" y="913" font-size="10.5" fill="#64748b">Outbox · seq 游标 · 去重</text>
+    </g>
+    <g>
+      <rect x="1182" y="874" width="232" height="52" rx="10" fill="#ffffff" stroke="#d9e1ec"/>
+      <text x="1198" y="896" font-size="12.5" font-weight="650" fill="#0f172a">指标与追踪</text>
+      <text x="1198" y="913" font-size="10.5" fill="#64748b">路由命中 · 通过率 · 耗时</text>
+    </g>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(1030,40)">
+    <text x="0" y="0" font-size="11" font-weight="700" fill="#64748b">图例</text>
+    <rect x="0" y="10" width="14" height="10" rx="3" fill="#2563eb"/>
+    <text x="20" y="19" font-size="11" fill="#475569">Web</text>
+    <rect x="70" y="10" width="14" height="10" rx="3" fill="#7c3aed"/>
+    <text x="90" y="19" font-size="11" fill="#475569">编排/路由</text>
+    <rect x="170" y="10" width="14" height="10" rx="3" fill="#0891b2"/>
+    <text x="190" y="19" font-size="11" fill="#475569">创作/资产</text>
+    <rect x="270" y="10" width="14" height="10" rx="3" fill="#0b7a5f"/>
+    <text x="290" y="19" font-size="11" fill="#475569">生成/质检</text>
+    <rect x="0" y="28" width="14" height="10" rx="3" fill="#d97706"/>
+    <text x="20" y="37" font-size="11" fill="#475569">交付/恢复</text>
+    <rect x="100" y="28" width="14" height="10" rx="3" fill="#475569"/>
+    <text x="120" y="37" font-size="11" fill="#475569">基础设施</text>
+  </g>
+</svg>

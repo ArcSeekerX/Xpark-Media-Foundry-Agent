@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xpark Media Foundry · 架构与图标</title>
+<style>
+  :root{--bg:#f6f8fb;--paper:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--green:#76B900}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{background:linear-gradient(120deg,#12253d,#17324e);color:#eaf2ff;padding:28px 4vw}
+  header h1{margin:0 0 6px;font-size:26px}
+  header p{margin:0;color:#b9cce6}
+  .wrap{max-width:1720px;margin:0 auto;padding:24px 4vw 80px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+  .toolbar a{text-decoration:none;color:#22477f;background:#fff;border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:13px}
+  .toolbar a:hover{border-color:var(--green);color:#3d5f00}
+  section{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:22px;box-shadow:0 2px 10px #0f172a08}
+  section h2{margin:0 0 4px;font-size:19px}
+  section p.sub{margin:0 0 14px;color:var(--muted);font-size:13px}
+  .frame{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fbfdff}
+  .frame img{display:block;width:100%;height:auto}
+  .wide .frame img{min-width:1200px}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:10px 4vw 40px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Xpark Media Foundry · 架构与图标</h1>
+  <p>总体架构 · 主 Agent 流程与智能路由 · 模块图标集（全部为 SVG）</p>
+</header>
+<div class="wrap">
+  <div class="toolbar">
+    <a href="OPTIMIZATION_PLAN.md">优化规划</a>
+    <a href="architecture.svg">architecture.svg</a>
+    <a href="agent-flow.svg">agent-flow.svg</a>
+    <a href="icons.svg">icons.svg</a>
+  </div>
+
+  <section>
+    <h2>01 · 总体架构</h2>
+    <p class="sub">Web 体验 / 编排与智能路由 / 创作与资产 / 生成与质检 / 交付与恢复 五层 + 共享底座。</p>
+    <div class="frame wide"><img src="architecture.svg" alt="总体架构图"></div>
+  </section>
+
+  <section>
+    <h2>02 · 主 Agent 流程 · 智能路由与候选重生成</h2>
+    <p class="sub">含智能路由分支、质检修复闭环、采用/弃用/重新生成与废图废视频回收站。</p>
+    <div class="frame wide"><img src="agent-flow.svg" alt="主 Agent 流程图"></div>
+  </section>
+
+  <section>
+    <h2>03 · 模块图标集</h2>
+    <p class="sub">16 个 SVG symbol，可用 &lt;use href="#ic-xxx"&gt; 复用。</p>
+    <div class="frame"><img src="icons.svg" alt="模块图标集"></div>
+  </section>
+</div>
+<footer>Xpark Media Foundry Agent · 图表随代码一同版本化</footer>
+</body>
+</html>
