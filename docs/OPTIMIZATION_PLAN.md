@@ -170,7 +170,7 @@ interface DiscardRecord {
 | 智能路由 v1 | ✅ | `routing/router.ts`：规则优先 + 模型建议 + 影子模式 + 回退；`decision.proposed/applied/fallback` 事件 |
 | 持久化 | ✅ | 流程快照写入 localStorage（超配额自动降级，丢弃内联大图） |
 | 取消 | ✅ | `cancel()` 停止后续调度，运行中任务在安全边界停止 |
-| 交互体验 | ✅ | 候选对比网格、弃用原因、重生成变体（种子/提示词/步数）、回收站、路由/弃用/重生成指标 |
+| 交互体验 | ✅ | **数字资产模块**（全局资产总览/按类型与状态筛选/搜索/采用/弃用/恢复/重生成/打开）、候选对比网格、弃用原因、重生成变体（种子/提示词/步数）、回收站 |
 | 新事件 | ✅ | `candidate.created/accepted/discarded/regenerated`、`decision.applied/fallback` |
 | SSE 事件流 | ✅ | 后端 `EventBus` + `GET /api/events`（seq 游标、id 去重、keep-alive）；前端 `sseStatus` 接入 |
 | 后端鉴权 / CORS | ✅ | `API_TOKEN`（Bearer 或 SSE `?token=`）+ `ALLOWED_ORIGINS` 白名单；`/api/health` 公开 |
