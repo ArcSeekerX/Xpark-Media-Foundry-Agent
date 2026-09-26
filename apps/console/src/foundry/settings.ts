@@ -41,7 +41,8 @@ export interface AppSettings {
 const env = import.meta.env as Record<string, string | undefined>;
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  mode: (env.VITE_MODE as RuntimeMode) ?? "mock",
+  // Default to the real interface path; set VITE_MODE=mock only for offline UI demos.
+  mode: (env.VITE_MODE as RuntimeMode) ?? "live",
   backendUrl: env.VITE_BACKEND_URL ?? "/api",
   backendToken: env.VITE_API_TOKEN ?? "",
   sse: (env.VITE_SSE ?? "1") !== "0",

@@ -3,12 +3,20 @@ import { createMockAdapters } from "./mock";
 import { ComfyVideoModel } from "./comfy";
 import { ComfyImageModel } from "./comfy-image";
 import { GenerationBackend, HttpImageModel, HttpVideoModel } from "./backend";
-import { HttpAssetStore, HttpDecisionPort, OpenAITextModel } from "./live";
+import {
+  HttpAssetStore,
+  HttpDecisionPort,
+  HttpVisionJudge,
+  OpenAITextModel,
+  UncertainJudge,
+  UnavailableImageModel,
+} from "./live";
 import type { Adapters } from "./types";
 
 export function createAdapters(): Adapters {
-  const base = createMockAdapters(config.quality.acceptThreshold);
-  if (!isLive()) return base;
+  // Mock adapters are only used when explicitly selected (VITE_MODE=mock) for
+  // offline UI demos. The default path uses real interfaces end to end.
+  if (!isLive()) return createMockAdapters(config.quality.acceptThreshold);
 
   const text = new OpenAITextModel(
     config.textModel.baseUrl,
@@ -18,6 +26,9 @@ export function createAdapters(): Adapters {
   const backend = new GenerationBackend(config.backendUrl, config.backendToken);
   const store = new HttpAssetStore(config.backendUrl);
   const decision = new HttpDecisionPort(config.decision.url, config.decision.engine);
+  const judge = backend.available
+    ? new HttpVisionJudge(config.backendUrl, config.backendToken)
+    : new UncertainJudge();
 
   // Prefer the business backend (front/back contract); fall back to talking to
   // ComfyUI directly when no backend URL is configured.
@@ -35,9 +46,8 @@ export function createAdapters(): Adapters {
         defaultSampler: config.video.sampler,
       });
 
-  let image = base.image;
-  if (config.image.enabled) {
-    image = backend.available
+  const image = config.image.enabled
+    ? backend.available
       ? new HttpImageModel(backend, {
           width: config.image.width,
           height: config.image.height,
@@ -52,16 +62,16 @@ export function createAdapters(): Adapters {
           defaultSteps: config.image.steps,
           defaultSampler: config.image.sampler,
           defaultCfg: config.image.cfg,
-        });
-  }
+        })
+    : new UnavailableImageModel();
 
   return {
-    ...base,
-    text: text.available ? text : base.text,
+    text,
     video,
     image,
-    store: store.available ? store : base.store,
-    decision: decision.available ? decision : base.decision,
+    judge,
+    store,
+    decision,
     backend: backend.available ? backend : undefined,
   };
 }

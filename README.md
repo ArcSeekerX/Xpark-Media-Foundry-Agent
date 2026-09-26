@@ -102,6 +102,10 @@ PATH=/opt/node22/bin:$PATH npm run preview   # http://0.0.0.0:5000
 | `POST /api/videos/jobs` | 提交 MiniMax H3 参考生视频任务 |
 | `GET /api/videos/jobs/{id}` | 查询生视频任务与产物 |
 | `POST /api/productions/compose` | ffmpeg 合成已采用片段；无 ffmpeg 时返回 503，前端降级为片段预览 |
+| `POST /api/judge` | 质检：ffprobe 确定性技术检查；无视觉模型时返回 `uncertain` 并转人工复核 |
+| `POST /api/projects/{id}/archive` | 归档：写入并返回 manifest 记录 |
+
+默认走真实接口（`VITE_MODE` 默认 `live`）。真实链路下的明确降级：ComfyUI 未运行时任务返回 `503 comfy_unavailable`；无 ffmpeg 时合成返回 `503 ffmpeg_unavailable`；未接入视觉理解模型时质检返回 `human_review`（不伪造分数）。仅在需要无 GPU 离线演示时设 `VITE_MODE=mock`。
 
 ```bash
 # 启动生成后端（默认连接 http://127.0.0.1:8188 的 ComfyUI）
@@ -118,7 +122,7 @@ python3 apps/api/test_server.py
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `VITE_MODE` | `mock` | 设为 `live` 启用真实后端适配器；`mock` 下生图返回内联 SVG 占位图，便于无 GPU 演示 |
+| `VITE_MODE` | `live` | 默认真实接口；设 `mock` 仅用于无 GPU 离线演示（占位适配器） |
 | `VITE_BACKEND_URL` | `/api` | 业务后端地址；留空则直连 ComfyUI |
 | `VITE_COMFY_URL` | `/comfy` | ComfyUI 地址（直连模式） |
 | `VITE_IMAGE_WORKFLOW` | `/workflows/qwen_image_t2i.api.json` | ComfyUI 生图 API 工作流 |

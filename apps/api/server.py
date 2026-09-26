@@ -84,6 +84,11 @@ CAPABILITIES = {
         "available": bool(shutil.which("ffmpeg")),
         "containers": ["mp4"],
     },
+    "judge": {
+        "tool": "ffprobe",
+        "available": bool(shutil.which("ffprobe")),
+        "semantic": False,
+    },
 }
 
 
@@ -431,6 +436,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._compose(self._json_body())
             if parsed.path == "/api/settings":
                 return self._update_settings(self._json_body())
+            if parsed.path == "/api/judge":
+                return self._judge(self._json_body())
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/archive"):
+                project_id = parsed.path.split("/")[3]
+                return self._archive(project_id, self._json_body())
             return self._send(404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
             return self._send(500, {"error": str(exc)})
@@ -523,7 +533,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": f"workflow missing: {workflow}"})
         builder = build_image_graph if kind == "image" else build_video_graph
         graph = builder(self.comfy_url, workflow, req)
-        prompt_id = submit_graph(self.comfy_url, graph)
+        try:
+            prompt_id = submit_graph(self.comfy_url, graph)
+        except (urllib.error.URLError, ConnectionError, OSError) as exc:
+            return self._send(503, {"error": "comfy_unavailable", "detail": str(exc)})
+        except RuntimeError as exc:
+            return self._send(400, {"error": str(exc)})
         job_id = f"job_{next(JOB_COUNTER):04d}_{uuid.uuid4().hex[:8]}"
         project_id = str(req.get("project_id") or "default")
         with JOBS_LOCK:
@@ -603,6 +618,87 @@ class Handler(BaseHTTPRequestHandler):
         data, _ = http_bytes(str(clip))
         target.write_bytes(data)
         return target
+
+    def _fetch_asset(self, url: str) -> bytes:
+        parsed = urllib.parse.urlparse(url)
+        query = urllib.parse.parse_qs(parsed.query)
+        if query.get("filename"):
+            data, _ = http_bytes(f"{self.comfy_url}{parsed.path}?{parsed.query}")
+            return data
+        if parsed.path.startswith("/api/exports/"):
+            local = Path(SETTINGS["exports_dir"]) / parsed.path.rsplit("/", 1)[-1]
+            return local.read_bytes()
+        data, _ = http_bytes(url)
+        return data
+
+    def _judge(self, req: dict):
+        asset = req.get("asset") or {}
+        url = asset.get("url") or asset.get("remoteUrl") or ""
+        hard: dict = {}
+        evidence: list = []
+        uncertain = True
+        ffprobe = shutil.which("ffprobe")
+        if ffprobe and url:
+            tmp = self.data_dir / "judge"
+            tmp.mkdir(parents=True, exist_ok=True)
+            probe = tmp / f"{uuid.uuid4().hex}.bin"
+            try:
+                probe.write_bytes(self._fetch_asset(url))
+                out = subprocess.run(
+                    [ffprobe, "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=nw=1:nk=1", str(probe)],
+                    capture_output=True, text=True, timeout=60,
+                )
+                duration = float((out.stdout or "0").strip() or 0)
+                hard = {"decodable": out.returncode == 0, "duration_ok": duration > 0}
+                uncertain = not hard["decodable"]
+                if not hard["decodable"]:
+                    evidence.append({"tag": "decode_failed"})
+            except Exception as exc:  # noqa: BLE001
+                evidence.append({"tag": "probe_failed", "note": str(exc)})
+            finally:
+                probe.unlink(missing_ok=True)
+        else:
+            evidence.append({"tag": "semantic_unavailable", "note": "未接入视觉理解模型/ffprobe"})
+        # No semantic scores are available, so never auto-accept: route to review.
+        verdict = "human_review" if uncertain or not hard.get("decodable", False) else "repair"
+        report = {
+            "runId": req.get("run_id", ""),
+            "verdict": verdict,
+            "hardChecks": hard,
+            "scores": {},
+            "evidence": evidence,
+            "uncertain": uncertain,
+            "rubricVersion": "technical-v1",
+        }
+        EVENT_BUS.publish(
+            str(req.get("project_id") or "default"),
+            "quality.evaluated",
+            f"judge verdict={verdict}",
+            run_id=req.get("run_id", ""),
+            payload=report,
+        )
+        return self._send(200, report)
+
+    def _archive(self, project_id: str, req: dict):
+        exports = Path(SETTINGS["exports_dir"])
+        exports.mkdir(parents=True, exist_ok=True)
+        manifest = exports / f"manifest_{project_id}.json"
+        asset_ids = req.get("asset_ids") or []
+        record = {
+            "archiveId": "arc_" + uuid.uuid4().hex[:12],
+            "projectId": project_id,
+            "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "manifestKey": f"exports/{manifest.name}",
+            "assetIds": asset_ids,
+            "totalBytes": 0,
+        }
+        try:
+            manifest.write_text(json.dumps({**record, "extra": req.get("extra")}, ensure_ascii=False), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        EVENT_BUS.publish(project_id, "export.completed", f"archive {record['archiveId']}", artifact_ids=asset_ids)
+        return self._send(200, record)
 
     def _compose(self, req: dict):
         ffmpeg = shutil.which("ffmpeg")

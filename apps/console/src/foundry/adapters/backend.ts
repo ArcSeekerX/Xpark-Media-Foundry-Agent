@@ -79,7 +79,16 @@ async function requestJson<T>(
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       signal: ctl.signal,
     });
-    if (!r.ok) throw new Error(`${url} -> ${r.status}`);
+    if (!r.ok) {
+      let detail = "";
+      try {
+        const body = (await r.json()) as { error?: string; detail?: string };
+        detail = body.error ?? body.detail ?? "";
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new Error(detail ? `${detail} (${r.status})` : `${url} -> ${r.status}`);
+    }
     return (await r.json()) as T;
   } finally {
     clearTimeout(t);

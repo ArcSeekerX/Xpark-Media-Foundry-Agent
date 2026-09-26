@@ -190,6 +190,36 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(updated["imports_dir"], "/tmp/xpark-imports-test")
         self.assertEqual(updated["exports_dir"], "/tmp/xpark-exports-test")
 
+    def test_judge_reports_uncertain(self):
+        report = post_json(
+            f"{self.api_url}/api/judge",
+            {"run_id": "r1", "project_id": "p1", "asset": {"url": "/api/exports/x.mp4"}},
+        )
+        self.assertEqual(report["verdict"], "human_review")
+        self.assertTrue(report["uncertain"])
+        self.assertEqual(report["runId"], "r1")
+
+    def test_archive_returns_record(self):
+        record = post_json(
+            f"{self.api_url}/api/projects/p1/archive",
+            {"asset_ids": ["a1", "a2"]},
+        )
+        self.assertEqual(record["projectId"], "p1")
+        self.assertEqual(record["assetIds"], ["a1", "a2"])
+
+    def test_job_reports_comfy_unavailable(self):
+        original = server.Handler.comfy_url
+        server.Handler.comfy_url = "http://127.0.0.1:9"  # unreachable
+        try:
+            try:
+                post_json(f"{self.api_url}/api/images/jobs", {"prompt": "x", "project_id": "p1"})
+                self.fail("expected 503 when ComfyUI is down")
+            except urllib.error.HTTPError as exc:
+                self.assertEqual(exc.code, 503)
+                self.assertIn("comfy_unavailable", exc.read().decode())
+        finally:
+            server.Handler.comfy_url = original
+
     def test_compose_requires_clips(self):
         try:
             post_json(f"{self.api_url}/api/productions/compose", {"clips": []})
