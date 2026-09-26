@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Activity,
   Bot,
   Clapperboard,
   Film,
@@ -18,7 +19,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ReferenceAssets, assetUrl } from './ReferenceAssets'
 import { CandidatePanel } from './CandidatePanel'
-import { DigitalAssets } from './DigitalAssets'
 import type { Asset, Shot } from '@/foundry/types'
 
 function firstImageUrl(shot: Shot, assets: Asset[]): string | undefined {
@@ -109,6 +109,14 @@ export function AgentView() {
   }
 
   const accepted = state.shots.filter((s) => s.phase === 'ACCEPTED').length
+  const progressPct =
+    state.shots.length > 0 ? Math.round((accepted / state.shots.length) * 100) : 0
+  const runningShot = state.shots.find((s) =>
+    state.steps.some((st) => st.shotId === s.shotId && st.state === 'running'),
+  )
+  const latestArtifact = [...state.assets].reverse().find((a) => assetUrl(a))
+  const latestArtifactUrl = assetUrl(latestArtifact)
+  const latestEvent = state.events.at(-1)?.summary ?? ''
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto pr-1">
@@ -359,10 +367,46 @@ export function AgentView() {
 
         {/* Right column */}
         <div className="flex flex-col gap-4 xp-stagger">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Activity size={16} className="text-[#76B900]" /> 当前进度与产物
+              </CardTitle>
+              <Badge variant={accepted === state.shots.length && state.shots.length > 0 ? 'default' : 'outline'}>
+                已验收 {accepted}/{state.shots.length}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={'h-full rounded-full bg-[#76B900] transition-all duration-500 ' + (state.busy ? 'xp-progress' : '')}
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-9 shrink-0 overflow-hidden rounded-md bg-muted/60">
+                  {latestArtifact?.mediaType === 'video' && latestArtifactUrl ? (
+                    <video src={latestArtifactUrl} muted className="h-full w-full object-cover" />
+                  ) : latestArtifactUrl ? (
+                    <img src={latestArtifactUrl} alt="" className="h-full w-full object-cover" />
+                  ) : null}
+                </div>
+                <div className="min-w-0 flex-1 text-xs">
+                  <div className="truncate">
+                    {runningShot ? `正在生成：${runningShot.title}` : latestEvent || '等待开始…'}
+                  </div>
+                  <div className="truncate text-muted-foreground">
+                    {latestArtifact ? `最新产物：${latestArtifact.storageKey}` : '暂无产物'}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex gap-1 rounded-lg border border-border bg-muted/20 p-1">
             {(
               [
-                ['assets', '资产'],
+                ['assets', '镜头'],
                 ['production', '制作'],
                 ['runtime', '运行'],
               ] as const
@@ -384,27 +428,6 @@ export function AgentView() {
 
           {rightTab === 'assets' && (
             <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Layers size={16} className="text-[#76B900]" /> 数字资产
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DigitalAssets
-                assets={state.assets}
-                shots={state.shots}
-                runs={state.runs}
-                busy={state.busy}
-                onAccept={(shotId, assetId) => flow.acceptCandidate(shotId, assetId)}
-                onDiscard={(assetId, reason, note) => flow.discardCandidate(assetId, reason, note)}
-                onRestore={(assetId) => flow.restoreCandidate(assetId)}
-                onRegenerate={(shotId) => void flow.regenerateShot(shotId)}
-                onSelectShot={setActiveShotId}
-              />
-            </CardContent>
-          </Card>
-
           {activeShot && (
             <Card>
               <CardHeader>

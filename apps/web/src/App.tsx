@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { AgentPage } from "./components/AgentPage";
+import { AssetsView } from "./components/AssetsView";
 import { OneClickStudio } from "./components/OneClickStudio";
 import { SettingsView } from "./components/SettingsView";
 
-type Mode = "agent" | "studio" | "settings";
+type Mode = "agent" | "assets" | "studio" | "settings";
 
 export function App() {
   const [mode, setMode] = useState<Mode>("agent");
@@ -15,6 +16,12 @@ export function App() {
           onClick={() => setMode("agent")}
         >
           主 Agent
+        </button>
+        <button
+          className={`btn small ${mode === "assets" ? "primary" : ""}`}
+          onClick={() => setMode("assets")}
+        >
+          数字资产
         </button>
         <button
           className={`btn small ${mode === "studio" ? "primary" : ""}`}
@@ -31,6 +38,10 @@ export function App() {
       </div>
       {mode === "agent" ? (
         <AgentPage />
+      ) : mode === "assets" ? (
+        <div className="app">
+          <AssetsView />
+        </div>
       ) : mode === "studio" ? (
         <div className="app">
           <OneClickStudio />

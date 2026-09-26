@@ -10,7 +10,6 @@ import { PromptEditor } from "./PromptEditor";
 import { ExportPanel } from "./ExportPanel";
 import { EventLogView } from "./EventLogView";
 import { ReferenceAssets, assetUrl } from "./ReferenceAssets";
-import { DigitalAssets } from "./DigitalAssets";
 import { CandidatePanel } from "./CandidatePanel";
 import type { Asset } from "../types";
 
@@ -87,6 +86,17 @@ export function AgentPage() {
   const previewAsset =
     activeAsset ?? [...boundAssets].reverse().find((a) => a.mediaType === "image");
 
+  const acceptedCount = state.shots.filter((s) => s.phase === "ACCEPTED").length;
+  const progressPct = state.shots.length
+    ? Math.round((acceptedCount / state.shots.length) * 100)
+    : 0;
+  const runningShot = state.shots.find((s) =>
+    state.steps.some((st) => st.shotId === s.shotId && st.state === "running"),
+  );
+  const latestArtifact = [...state.assets].reverse().find((a) => assetUrl(a));
+  const latestArtifactUrl = assetUrl(latestArtifact);
+  const latestEvent = state.events.at(-1)?.summary ?? "";
+
   return (
     <div className="app">
       <div className="topbar">
@@ -162,10 +172,40 @@ export function AgentPage() {
 
         {/* Right: production console */}
         <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <section className="card">
+            <header>
+              <h2>当前进度与产物</h2>
+              <span className="spacer" style={{ marginLeft: "auto" }} />
+              <span className="badge">已验收 {acceptedCount}/{state.shots.length}</span>
+            </header>
+            <div className="body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="progressbar">
+                <i className={state.busy ? "running" : ""} style={{ width: `${progressPct}%` }} />
+              </div>
+              <div className="row" style={{ gap: 10 }}>
+                <span className="cand-thumb">
+                  {latestArtifact?.mediaType === "video" && latestArtifactUrl ? (
+                    <video src={latestArtifactUrl} muted />
+                  ) : latestArtifactUrl ? (
+                    <img src={latestArtifactUrl} alt="" />
+                  ) : null}
+                </span>
+                <span style={{ minWidth: 0, flex: 1, fontSize: 12 }}>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {runningShot ? `正在生成：${runningShot.title}` : latestEvent || "等待开始…"}
+                  </div>
+                  <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {latestArtifact ? `最新产物：${latestArtifact.storageKey}` : "暂无产物"}
+                  </div>
+                </span>
+              </div>
+            </div>
+          </section>
+
           <div className="seg" style={{ width: "100%" }}>
             {(
               [
-                ["assets", "资产"],
+                ["assets", "镜头"],
                 ["production", "制作"],
                 ["runtime", "运行"],
               ] as const
@@ -183,25 +223,6 @@ export function AgentPage() {
 
           {rightTab === "assets" && (
             <>
-          <section className="card">
-            <header>
-              <h2>4 · 数字资产</h2>
-            </header>
-            <div className="body">
-              <DigitalAssets
-                assets={state.assets}
-                shots={state.shots}
-                runs={state.runs}
-                busy={state.busy}
-                onAccept={(shotId, assetId) => flow.acceptCandidate(shotId, assetId)}
-                onDiscard={(assetId, reason, note) => flow.discardCandidate(assetId, reason, note)}
-                onRestore={(assetId) => flow.restoreCandidate(assetId)}
-                onRegenerate={(shotId) => void flow.regenerateShot(shotId)}
-                onSelectShot={setActiveShotId}
-              />
-            </div>
-          </section>
-
           {activeShot && (
             <section className="card">
               <header>

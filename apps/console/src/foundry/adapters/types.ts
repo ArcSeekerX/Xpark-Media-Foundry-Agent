@@ -113,6 +113,7 @@ export interface Capabilities {
   image?: { model?: string; max_reference_images?: number; inputs?: string[] };
   video?: { model?: string; max_reference_images?: number; fps?: number; inputs?: string[] };
   compose?: { available?: boolean; tool?: string };
+  storage?: { data_dir?: string; imports_dir?: string; generated_dir?: string; exports_dir?: string };
 }
 
 export interface ComposeResult {
