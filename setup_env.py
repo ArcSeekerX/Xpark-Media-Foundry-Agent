@@ -18,7 +18,7 @@ DEPENDENCIES = {
         'https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE.git',
 }
 FILES = ('__init__.py', 'nodes.py', 'cache.py', 'streaming.py', 'convert.py',
-         'setup.bat', 'setup.ps1', 'setup_env.py', 'README.md', 'LICENSE',
+         'setup_env.py', 'README.md', 'LICENSE',
          'THIRD_PARTY_NOTICES.md', 'VALIDATION.md', 'compatibility.json', '.gitignore',
          'adaptive.py', 'av_adaptive.py', 'block_adaptive.py', 'layer_adaptive.py',
          'jev_client.py', 'laya_client.py', 'openjev_client.py', 'test_adaptive.py', 'test_laya_client.py',
@@ -70,9 +70,8 @@ def main():
         if value is not None:
             setattr(args, name, value.resolve())
     executable = Path(sys.executable).resolve()
-    embedded = any(executable.parent.glob('python*._pth'))
-    if sys.prefix == sys.base_prefix and not embedded:
-        raise RuntimeError('Refusing global Python. Select the ComfyUI venv or embedded Python.')
+    if sys.prefix == sys.base_prefix:
+        raise RuntimeError('Refusing global Python. Select the ComfyUI virtual environment Python.')
     if not (root / 'comfy/sd.py').is_file():
         parser.error('--comfy-root must contain comfy/sd.py')
     os.chdir(root)
@@ -96,7 +95,7 @@ def main():
         matches = list(dict.fromkeys(p.resolve() for p in matches))
         if len(matches) != 1:
             raise RuntimeError(f'Expected one local {name}, found {len(matches)}. '
-                               'Use -Model / -Gate, or configure ComfyUI extra_model_paths.yaml. '
+                               'Use --model / --gate, or configure ComfyUI extra_model_paths.yaml. '
                                'No model will be downloaded.')
         return matches[0]
 

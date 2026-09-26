@@ -1,6 +1,6 @@
 # Validation — 2026-09-20 / ComfyUI 0.36.0
 
-在 GB10 DGX Spark 环境下，确认了通过 `setup.bat` 向现有环境的安装导入以及实际生成。
+在 GB10 DGX Spark 环境下，确认了通过 `convert.py` 向现有环境的安装导入以及实际生成。
 未改动 ComfyUI 本体、venv 的依赖包和全局 Python。对原始模型、Gate 及既有转换缓存全部进行了 SHA-256 校验比对，缓存通过同一驱动器上的硬链接复用。未进行模型下载或重新转换。
 
 - ComfyUI: **0.36.0**, commit `7a0b5eede3f9721c8faab290689893f36edc6d66`

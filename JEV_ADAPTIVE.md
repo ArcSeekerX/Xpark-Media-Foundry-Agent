@@ -9,43 +9,35 @@
 ## 必要条件与安装
 
 1. 请满足 [README](README.md) 中对应的 ComfyUI、comfy-kitchen、模型、Gate 及预转换步骤的要求。模型、参考图像和已转换的权重不随仓库附带。实验已在 GB10 DGX Spark、ComfyUI 0.36 系的指定环境中验证，不保证其他环境的兼容性。
-2. 请将本分支放入 ComfyUI 的 `custom_nodes` 目录，或使用本分支的 `setup.bat` 安装。请勿同时加载同一节点的另一份副本。安装程序会复制 Jev 模块、文档和示例，但不会自动安装 SDK。
+2. 请将本分支放入 ComfyUI 的 `custom_nodes` 目录。请勿同时加载同一节点的另一份副本。分发内容包含 Jev 模块、文档和示例，但不会自动安装 SDK。
 3. 仅在试用 Jev 时才需要准备 TypeSafe 的账号/API 密钥和 SDK 专用 venv。固定模式不需要 SDK/API 密钥。
 
 获取示例（在本分支发布到远程后可用）：
 
-```powershell
+```bash
 git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/ArcSeekerX/Xpark-Media-Foundry-Agent.git
 ```
 
-在仓库内创建 SDK 专用环境的示例（验证时 SDK 使用的 Python 为 3.10）：
+在仓库内创建 SDK 专用环境的示例：
 
-```powershell
-py -3.10 -m venv .venv-jev
-& .\.venv-jev\Scripts\python.exe -m pip install -r requirements-jev.txt
+```bash
+python3 -m venv .venv-jev
+.venv-jev/bin/python -m pip install -r requirements-jev.txt
 ```
 
-无需将 SDK 混入 ComfyUI 的 Python 或全局 Python。请在工作流的 `sdk_python` 中指定该 venv 的 `python.exe` 的绝对路径。留空会使用 ComfyUI 自身的 Python，因此如果将 SDK 安装在单独的环境中，请务必进行设置。
+无需将 SDK 混入 ComfyUI 的 Python 或全局 Python。请在工作流的 `sdk_python` 中指定该 venv 的 Python 绝对路径。留空会使用 ComfyUI 自身的 Python，因此如果将 SDK 安装在单独的环境中，请务必进行设置。
 
 ## 不把 API 密钥写入文件直接启动
 
 API 密钥从**启动 ComfyUI 的进程的环境变量 `TYPESAFE_API_KEY`** 中读取。请勿将密钥写入工作流、脚本、提交或日志中。对已经启动的 ComfyUI 事后设置的环境变量不会生效。
 
-在同一个 PowerShell 中以隐藏方式输入，然后从该处执行平时的 ComfyUI 启动命令。密钥明文不会留在命令历史记录中。
+在同一个 shell 中以隐藏方式输入，然后从该处执行平时的 ComfyUI 启动命令。密钥明文不会留在命令历史记录中。
 
-```powershell
-$jevSecret = Read-Host 'TypeSafe API key' -AsSecureString
-$jevPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($jevSecret)
-try {
-    $env:TYPESAFE_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($jevPointer)
-} finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($jevPointer)
-    $jevSecret.Dispose()
-    Remove-Variable jevPointer, jevSecret
-}
+```bash
+read -rsp 'TypeSafe API key: ' TYPESAFE_API_KEY && export TYPESAFE_API_KEY && echo
 # 从此 shell 执行平时的 ComfyUI 启动命令。
-# 使用后，同时删除残留在父 shell 中的值：
-# Remove-Item Env:TYPESAFE_API_KEY
+# 使用后清除该变量：
+# unset TYPESAFE_API_KEY
 ```
 
 代码不会将密钥、HTTP 头部、SDK 异常正文输出到日志。`[Jev VSA]` 日志会输出特征量、选择结果和 usage。layer_v5 除了汇总后的音频/视频激活度、sigma、层编号、keep 率之外，还会向 TypeSafe 发送关于实验目的和固定的人物/语音质量的说明。state 中不包含原始图像、音频、模型权重和 API 密钥。
@@ -59,13 +51,21 @@ try {
 
 请确认 node127 的模型与转换缓存、119/120 的 VAE、128 的 Text Encoder 与你本地的名称一致。更换模型后的结果请与文中刊载的实测复现区分开。外部节点使用 KJNodes 的 ChunkFFN 和 MotionCache-FastVAE 的 FastVAE。不使用 MotionCache 的输出复用。
 
-从 PowerShell 向正在运行的专用 ComfyUI 提交一次的示例：
+向正在运行的专用 ComfyUI 提交一次的示例：
 
-```powershell
-$jevGraph = Get-Content -Raw -Encoding UTF8 .\examples\jev_layer_v5_4step.api.json | ConvertFrom-Json
-$jevGraph.'900'.inputs.sdk_python = (Resolve-Path .\.venv-jev\Scripts\python.exe).Path
-$jevBody = @{ prompt = $jevGraph } | ConvertTo-Json -Depth 100
-Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8188/prompt' -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($jevBody))
+```bash
+python3 - <<'PY'
+import json, pathlib, urllib.request
+graph = json.loads(pathlib.Path("examples/jev_layer_v5_4step.api.json").read_text(encoding="utf-8"))
+graph["900"]["inputs"]["sdk_python"] = str(pathlib.Path(".venv-jev/bin/python").resolve())
+body = json.dumps({"prompt": graph}).encode("utf-8")
+req = urllib.request.Request(
+    "http://127.0.0.1:8188/prompt",
+    data=body,
+    headers={"Content-Type": "application/json; charset=utf-8"},
+)
+print(urllib.request.urlopen(req).read().decode("utf-8"))
+PY
 ```
 
 端口请根据使用环境修改。请记下返回的 prompt_id，并在 ComfyUI 中确认完成。此示例不会重试或轮询。响应不明确时，请先查看历史记录再重新提交。生成物的保存位置通过启动时的 `--output-directory` 指定。
@@ -104,8 +104,8 @@ block_v3 是人物再现性被破坏的试作方案，并非此次的入口。pr
 
 使用装有 ComfyUI 的 torch 的 Python 执行。不需要 API 密钥，不涉及 GPU 生成和付费 API 调用。
 
-```powershell
-& 'C:\path\to\ComfyUI-venv\Scripts\python.exe' -B test_adaptive.py
+```bash
+/path/to/ComfyUI/venv/bin/python -B test_adaptive.py
 ```
 
 test_sdk_transport.py 需要一个能同时 import SDK、httpx2 和 torch 的测试环境。无需在标准的 SDK 专用 venv 中添加 torch，常规安装也不要求这个辅助测试。它使用模拟的 503/timeout，外部 API 调用为 0 次。

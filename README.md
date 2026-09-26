@@ -146,7 +146,7 @@ python3 apps/api/test_server.py
 
 ## 生成引擎详解：W4A4 + Streaming VSA
 
-以下为 FC1 W4A4 + Streaming VSA 路径的安装、一次性转换、工作流与验证说明。**在 Windows 上使用 `setup.bat` 即可轻松安装. 已在 ComfyUI v0.36.0 上完成安装与实际生成的确认.** 只要准备好兼容的 ComfyUI 和所需模型，即可一次性完成 Python 选择，兼容性检查，节点配置与预转换. 不会自动下载模型.
+以下为 FC1 W4A4 + Streaming VSA 路径的安装、一次性转换、工作流与验证说明. **已在 ComfyUI v0.36.0 上完成安装与实际生成的确认.** 只要准备好兼容的 ComfyUI 和所需模型，即可完成兼容性检查、节点配置与预转换. 不会自动下载模型.
 
 ### 安装前需要了解的事项
 
@@ -203,23 +203,7 @@ ComfyUI 验证 commit 为 `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`.
 - [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE)：`MiniMaxH3FastVAEDecode`.
 - `torch` / `safetensors` 使用与 ComfyUI 相同 Python 环境中的版本.
 
-附带 Windows 用的 `setup.bat`. 它使用现有 ComfyUI 的专用 Python 进行检查，安装和仅执行一次的转换. 不会自动更新 ComfyUI 本体，PyTorch，comfy-kitchen，也不会下载模型. 存在缺失 API 时会停止.
-
-### Windows 简易安装
-
-请先结束 ComfyUI 中的生成任务，然后获取并解压仓库，运行 `setup.bat`. 如果已放置在 `custom_nodes` 内，会自动检测 ComfyUI；否则需要输入 ComfyUI 文件夹路径. 也可以通过命令行按如下方式指定：
-
-```bat
-setup.bat -ComfyRoot "C:\ComfyUI_windows_portable\ComfyUI"
-```
-
-- 会查找 portable 的 `python_embeded\python.exe`，或 ComfyUI 内/上级文件夹的 `.venv\Scripts\python.exe`，以及 ComfyUI 内的 `venv\Scripts\python.exe`. 有多个候选时请用 `-Python "...\python.exe"` 指定. 拒绝使用全局 Python.
-- 会从 ComfyUI 的 `models` 和 `extra_model_paths.yaml` 中搜索现有模型. 原始 Diffusion 模型和 Gate 也可以用 `-Model "...safetensors" -Gate "...safetensors"` 指定. 请提前让 Text encoder 和 VAE 在 ComfyUI 中可用.
-- 缺少外部节点时，加上 `-InstallDependencies` 会仅获取缺失的 KJNodes / MotionCache-FastVAE，并将其 requirements 安装到专用 Python. 不会更新已有节点. 常规安装不会执行 pip.
-- 确认所需 API，native INT4，CPU offload/重新加载之后，将 FC1 和 Gate 预转换到 `ComfyUI\models\h3_preconverted\fc1_gate`. 原始 Diffusion 模型在生成时同样需要.
-- 已有的本项目格式缓存可用 `-CacheSource "...\cache"` 指定. 会对原始模型，Gate 和全部 shard 进行 SHA-256 校验；同一卷内使用硬链接，跨卷则复制. 请勿直接编辑硬链接源/目标的权重.
-- `-CheckOnly` 仅执行 GPU 检查和模型/已有缓存的验证，不创建任何文件. 没有缓存时会显示相应提示. 对于不完整或不一致的已有缓存，不会覆盖，而是停止.
-- 从其他位置重新安装时，如果已安装的代码不同会停止. 确认差异后指定 `-Update`，将仅替换本仓库的发布文件.
+安装与一次性转换在 **DGX OS / Linux** 上使用 ComfyUI 自带的 Python 执行 `convert.py`（见下方“安装与一次性转换”）. 该工具不会自动更新 ComfyUI 本体、PyTorch、comfy-kitchen，也不会下载模型；存在缺失 API 时会停止.
 
 完成后请重启 ComfyUI，并将附带 GUI 工作流中的参考图像换成自己的图像. 如果模型放在子文件夹中，也请同时在各 loader 中选择.
 
@@ -241,34 +225,34 @@ setup.bat -ComfyRoot "C:\ComfyUI_windows_portable\ComfyUI"
 
 ## 安装与一次性转换
 
-通常**只需使用上述 `setup.bat`** 即可完成检查与转换. 以下是希望手动执行时的步骤.
+使用 **ComfyUI 自带的 Python** 执行 `convert.py` 完成检查与一次性转换. 以下是希望手动执行时的步骤.
 
 1. 将本仓库整体放置到 `ComfyUI/custom_nodes/Xpark-Media-Foundry-Agent/`.
 2. 使上述模型和外部节点可用. 为避免正在运行的生成任务与转换争抢 GPU，请在生成结束后再进行转换.
-3. 使用 **ComfyUI 自带的 Python** 进行确认与转换. 以下是从 Windows portable 根目录执行的 PowerShell 示例.
+3. 使用 **ComfyUI 自带的 Python** 进行确认与转换. 以下为 DGX OS / Linux 示例.
 
-```powershell
-$h3Python = '.\python_embeded\python.exe'
-$h3Root = '.\ComfyUI'
-$h3Convert = '.\ComfyUI\custom_nodes\Xpark-Media-Foundry-Agent\convert.py'
+```bash
+H3_PYTHON=/path/to/ComfyUI/venv/bin/python
+H3_ROOT=/path/to/ComfyUI
+H3_CONVERT="$H3_ROOT/custom_nodes/Xpark-Media-Foundry-Agent/convert.py"
 
 # 耗时数秒的 native INT4 / CPU offload / 重新加载到 GPU 确认. 不生成文件.
-& $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root --check --gpu 0
+"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" --check --gpu 0
 
 # 依次预转换 50 层. 输出目录请指定一个不存在的新目录.
-& $h3Python -B -X utf8 $h3Convert `
-  --comfy-root $h3Root `
-  --model '.\ComfyUI\models\diffusion_models\minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors' `
-  --gate '.\ComfyUI\models\loras\fasth3_vsa_gate.safetensors' `
-  --output '.\ComfyUI\models\h3_preconverted\fc1_gate' --gpu 0
+"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" \
+  --comfy-root "$H3_ROOT" \
+  --model "$H3_ROOT/models/diffusion_models/minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors" \
+  --gate "$H3_ROOT/models/loras/fasth3_vsa_gate.safetensors" \
+  --output "$H3_ROOT/models/h3_preconverted/fc1_gate" --gpu 0
 
 # 复制后或怀疑损坏时，对全部缓存进行 SHA-256 验证.
-& $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root `
-  --verify '.\ComfyUI\models\h3_preconverted\fc1_gate'
+"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" \
+  --verify "$H3_ROOT/models/h3_preconverted/fc1_gate"
 ```
 
 `--gpu` 仅用于转换进程的 CUDA 选择. 不会改变 ComfyUI 通常的 GPU 设置.
-venv 环境下请将 `$h3Python` 替换为该 venv 的 Python. Linux 可以用相同参数在一行内执行，但本版本尚未验证.
+在 DGX OS / Linux 上，将 `H3_PYTHON` 指向 ComfyUI 使用的 Python 解释器即可.
 
 所需的额外磁盘空间约为 **5.8 GB**（FC1 约 3.86 GB + Gate 约 1.93 GB）. 由于内存还要用于整个模型，Text Encoder 和 VAE，需要足够的统一内存承载全部权重. GB10 DGX Spark 的统一内存可满足该需求，运行时模型 staging 约为 16GiB.
 转换时不会让全部 50 层常驻 GPU，而是逐层进行保存和 GPU 往返验证.
@@ -399,7 +383,7 @@ The sections below cover installation, one-time conversion, workflows and valida
 Combines **FC1 Plain ConvRot W4A4, preconverted INT8 Gate, and fixed padding decision cache**.
 Weight conversion is executed once offline; during generation, weights are loaded from CPU using ComfyUI's Dynamic VRAM / offload path.
 
-**Easy Windows installation with `setup.bat`; setup and full generation verified on ComfyUI v0.36.0.** With a compatible ComfyUI installation and the required models available, it handles Python selection, compatibility checks, node installation, and preconversion. Model weights are never downloaded automatically.
+**Installation and one-time conversion use ComfyUI's own Python to run `convert.py`; setup and full generation verified on ComfyUI v0.36.0.** With a compatible ComfyUI installation and the required models available, it handles compatibility checks and preconversion. Model weights are never downloaded automatically.
 
 ### Installation at a glance
 
@@ -464,23 +448,7 @@ Required APIs:
   - [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE): `MiniMaxH3FastVAEDecode`.
 - `torch` and `safetensors` must come from the same Python environment used by ComfyUI.
 
-The Windows `setup.bat` installer uses an existing isolated ComfyUI Python. It does not update ComfyUI, PyTorch, or comfy-kitchen, and never downloads model weights. Missing runtime APIs cause a clear failure.
-
-### Windows setup
-
-Finish any active generation, then run `setup.bat` from the downloaded repository. Inside `custom_nodes`, it detects ComfyUI automatically; otherwise it asks for the ComfyUI directory. You can also specify it directly:
-
-```bat
-setup.bat -ComfyRoot "C:\ComfyUI_windows_portable\ComfyUI"
-```
-
-- Selects the portable `python_embeded` interpreter, a `.venv` in ComfyUI or its parent, or a `venv` inside ComfyUI. Use `-Python "...\python.exe"` when multiple candidates exist. Global Python is rejected.
-- Searches existing `models` and `extra_model_paths.yaml`. Use `-Model "...safetensors" -Gate "...safetensors"` for explicit source paths. The text encoder and VAEs must already be available to ComfyUI.
-- `-InstallDependencies` clones only missing KJNodes / MotionCache-FastVAE repositories and installs their requirements into the selected isolated Python. Existing nodes are not updated. Without this option, setup never runs pip.
-- Checks required APIs, native INT4 execution, and CPU offload/reload, then converts FC1 and the gate once into `ComfyUI\models\h3_preconverted\fc1_gate`. The original diffusion model remains necessary for generation.
-- Use `-CacheSource "...\cache"` to reuse an existing cache in this project's format. All shards, the source model, and gate are SHA-256 verified. Same-volume files are hard-linked; cross-volume files are copied. Do not edit hard-linked weights in place.
-- `-CheckOnly` checks the GPU, models, and any existing cache without writing files. It reports when conversion is still needed. Incomplete or mismatched caches are rejected and never overwritten.
-- When installing from another directory, differing installed code is preserved unless you pass `-Update` after reviewing the differences. Only this repository's distribution files are replaced.
+Installation and one-time conversion on **DGX OS / Linux** use ComfyUI's own Python to run `convert.py` (see "One-Time Conversion Procedure" below). The tool never updates ComfyUI, PyTorch, or comfy-kitchen, and never downloads model weights. Missing runtime APIs cause a clear failure.
 
 Restart ComfyUI when setup finishes. Open the bundled GUI workflow, select your reference images, and adjust loader model names if your weights are in subdirectories.
 
@@ -510,8 +478,8 @@ Follow these 4 steps to get up and running:
 2. **Make required models available**
    - Place diffusion, text encoder, and VAE weights into their corresponding `ComfyUI/models/` subdirectories as listed in the table above.
    - Place `fasth3_vsa_gate.safetensors` in an accessible path (e.g., `ComfyUI/models/loras/fasth3_vsa_gate.safetensors`).
-3. **Run setup.bat**
-   - Run `setup.bat` to select ComfyUI's isolated Python, check native INT4 compatibility, and generate or verify `h3_preconverted/fc1_gate`. Add `-InstallDependencies` if the external node packages are missing. Existing models are reused.
+3. **Run convert.py**
+   - Run `convert.py` with ComfyUI's isolated Python to check native INT4 compatibility and generate or verify `h3_preconverted/fc1_gate`. Install any missing external node packages manually. Existing models are reused.
 4. **Open workflow and generate**
    - Start ComfyUI (recommended: `--disable-comfy-compiler`) and drag & drop [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json).
    - In the 3 `LoadImage` nodes, select your reference images (Full-body, Upper-body, Face close-up).
@@ -519,32 +487,30 @@ Follow these 4 steps to get up and running:
 
 ## 6. One-Time Conversion Procedure
 
-**`setup.bat` performs these checks and conversion automatically.** The commands below are an alternative for manual operation.
+**`convert.py` performs these checks and conversion.** Run it with **ComfyUI's own Python environment**. The example below targets DGX OS / Linux:
 
-Run conversion using **ComfyUI's own Python environment**. The example below uses PowerShell from the root of a Windows portable ComfyUI setup:
-
-```powershell
-$h3Python = '.\python_embeded\python.exe'
-$h3Root = '.\ComfyUI'
-$h3Convert = '.\ComfyUI\custom_nodes\Xpark-Media-Foundry-Agent\convert.py'
+```bash
+H3_PYTHON=/path/to/ComfyUI/venv/bin/python
+H3_ROOT=/path/to/ComfyUI
+H3_CONVERT="$H3_ROOT/custom_nodes/Xpark-Media-Foundry-Agent/convert.py"
 
 # 1. Smoke check native INT4 / CPU offload / GPU reload (takes seconds, writes no files)
-& $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root --check --gpu 0
+"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" --check --gpu 0
 
 # 2. Convert all 50 layers. Output directory must be a new, non-existing path.
-& $h3Python -B -X utf8 $h3Convert `
-  --comfy-root $h3Root `
-  --model '.\ComfyUI\models\diffusion_models\minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors' `
-  --gate '.\ComfyUI\models\loras\fasth3_vsa_gate.safetensors' `
-  --output '.\ComfyUI\models\h3_preconverted\fc1_gate' --gpu 0
+"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" \
+  --comfy-root "$H3_ROOT" \
+  --model "$H3_ROOT/models/diffusion_models/minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors" \
+  --gate "$H3_ROOT/models/loras/fasth3_vsa_gate.safetensors" \
+  --output "$H3_ROOT/models/h3_preconverted/fc1_gate" --gpu 0
 
 # 3. Verify SHA-256 integrity of all cache shards (useful after copying or suspected corruption)
-& $h3Python -B -X utf8 $h3Convert --comfy-root $h3Root `
-  --verify '.\ComfyUI\models\h3_preconverted\fc1_gate'
+"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" \
+  --verify "$H3_ROOT/models/h3_preconverted/fc1_gate"
 ```
 
 - `--gpu` selects the CUDA device exclusively for the conversion process. It does not affect ComfyUI's general settings.
-- In a venv environment, replace `$h3Python` with your venv's Python executable.
+- Point `H3_PYTHON` at the Python interpreter used by ComfyUI.
 - Required additional disk space is approximately **5.8 GB** (FC1 ~3.86 GB + Gate ~1.93 GB). Memory requirement: because the full model, text encoder, and VAEs are utilized, enough unified memory is needed to hold all weights. GB10 DGX Spark's unified memory satisfies this, with ~16GiB staging during runtime.
 - Layers are converted and roundtrip-verified one by one; all 50 layers are never resident in GPU memory simultaneously.
 - Successful completion outputs `COMPLETE: FC1 50/50 + Gate 50/50` and writes `manifest.json`. Existing output directories are never overwritten or deleted. If conversion fails partway, the partial directory is left intact; resolve the issue and specify a new directory.

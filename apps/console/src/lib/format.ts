@@ -5,8 +5,8 @@ const MIB = 1024 * 1024
 const GIB = 1024 * 1024 * 1024
 
 /** Format bytes to human-readable with auto-scaling: KB (<1MB), MB (<1GB), GB (>=1GB).
- *  Uses binary scaling (1024) under the conventional "GB" labels, matching `free -h`,
- *  `htop`, macOS, and Windows. */
+ *  Uses binary scaling (1024) under the conventional "GB" labels, matching `free -h`
+ *  and `htop` on Linux. */
 export function formatBytes(bytes: number): string {
   if (bytes >= GIB) return `${(bytes / GIB).toFixed(1)} GB`
   if (bytes >= MIB) return `${(bytes / MIB).toFixed(1)} MB`

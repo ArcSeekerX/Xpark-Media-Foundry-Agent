@@ -10,20 +10,20 @@ Branch: `exp/jev-adaptive-vsa`. This page documents **layer_v5, four steps**. Th
 
 Follow the base [README](README.md) for compatible ComfyUI, model weights, Gate weights, preconversion, KJNodes and FastVAE dependencies. Tested on GB10 DGX Spark; other environments require validation. Weights and reference images are not bundled.
 
-After this branch is published, clone it with `git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/ArcSeekerX/Xpark-Media-Foundry-Agent.git`. Place one copy under custom_nodes or use this branch's setup.bat. The installer copies Jev modules, examples and docs, but does not install the optional SDK.
+After this branch is published, clone it with `git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/ArcSeekerX/Xpark-Media-Foundry-Agent.git`. Place one copy under custom_nodes. The distribution copies Jev modules, examples and docs, but does not install the optional SDK.
 
 For adaptive mode only, create a separate SDK environment from the repository directory:
 
-```powershell
-py -3.10 -m venv .venv-jev
-& .\.venv-jev\Scripts\python.exe -m pip install -r requirements-jev.txt
+```bash
+python3 -m venv .venv-jev
+.venv-jev/bin/python -m pip install -r requirements-jev.txt
 ```
 
-Set node900's `sdk_python` to that environment's absolute python.exe path. Blank means the ComfyUI interpreter, which will fail if the SDK is only in the separate environment. Fixed mode needs neither SDK nor API credentials. Do not install into global Python.
+Set node900's `sdk_python` to that environment's absolute Python path. Blank means the ComfyUI interpreter, which will fail if the SDK is only in the separate environment. Fixed mode needs neither SDK nor API credentials. Do not install into global Python.
 
 ## Credentials and transmitted data
 
-Set `TYPESAFE_API_KEY` in the environment of the process that launches ComfyUI. An already-running server will not inherit a later change. Use the hidden-input PowerShell block in the [中文指南](JEV_ADAPTIVE.md#不把-api-密钥写入文件直接启动); it reads a SecureString and populates only the process environment. Never put a literal key in a workflow, script, log or commit. Remove the parent-shell variable after use with `Remove-Item Env:TYPESAFE_API_KEY`.
+Set `TYPESAFE_API_KEY` in the environment of the process that launches ComfyUI. An already-running server will not inherit a later change. Use the hidden-input shell block in the [中文指南](JEV_ADAPTIVE.md#不把-api-密钥写入文件直接启动); it reads without echo and populates only the process environment. Never put a literal key in a workflow, script, log or commit. Remove the parent-shell variable after use with `unset TYPESAFE_API_KEY`.
 
 The worker does not log the key, HTTP headers or exception bodies. State sent to TypeSafe includes sampled aggregate audio/video activation statistics, sigma, layer indices, current keep ratios, and fixed experimental goals/character and speech feedback. It does not contain raw images/audio, model weights or the API key. Decision logs include statistics, responses and token usage.
 
@@ -36,11 +36,19 @@ These are API graphs, not drag-and-drop GUI graphs. Supply three reference image
 
 Submit once to an already-running dedicated ComfyUI server:
 
-```powershell
-$jevGraph = Get-Content -Raw -Encoding UTF8 .\examples\jev_layer_v5_4step.api.json | ConvertFrom-Json
-$jevGraph.'900'.inputs.sdk_python = (Resolve-Path .\.venv-jev\Scripts\python.exe).Path
-$jevBody = @{ prompt = $jevGraph } | ConvertTo-Json -Depth 100
-Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8188/prompt' -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($jevBody))
+```bash
+python3 - <<'PY'
+import json, pathlib, urllib.request
+graph = json.loads(pathlib.Path("examples/jev_layer_v5_4step.api.json").read_text(encoding="utf-8"))
+graph["900"]["inputs"]["sdk_python"] = str(pathlib.Path(".venv-jev/bin/python").resolve())
+body = json.dumps({"prompt": graph}).encode("utf-8")
+req = urllib.request.Request(
+    "http://127.0.0.1:8188/prompt",
+    data=body,
+    headers={"Content-Type": "application/json; charset=utf-8"},
+)
+print(urllib.request.urlopen(req).read().decode("utf-8"))
+PY
 ```
 
 Adjust the port. Retain prompt_id and wait for completion in ComfyUI. This example does not retry or poll; inspect history before resubmitting an uncertain request. Select an output folder with ComfyUI's `--output-directory`. Load the fixed example for the control. Keep references and prompt identical across both conditions.
