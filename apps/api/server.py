@@ -594,36 +594,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def _download_clip(self, clip, work: Path, index: int) -> Path:
         target = work / f"clip_{index:03d}.mp4"
-        if isinstance(clip, dict):
-            if clip.get("filename"):
-                query = urllib.parse.urlencode({
-                    "filename": clip["filename"],
-                    "subfolder": clip.get("subfolder", ""),
-                    "type": clip.get("type", "output"),
-                })
-                data, _ = http_bytes(f"{self.comfy_url}/view?{query}")
-                target.write_bytes(data)
-                return target
-            clip = clip.get("url", "")
-        parsed = urllib.parse.urlparse(str(clip))
-        query = urllib.parse.parse_qs(parsed.query)
-        if query.get("filename"):
-            data, _ = http_bytes(f"{self.comfy_url}{parsed.path}?{parsed.query}")
+        if isinstance(clip, dict) and clip.get("filename"):
+            query = urllib.parse.urlencode({
+                "filename": clip["filename"],
+                "subfolder": clip.get("subfolder", ""),
+                "type": clip.get("type", "output"),
+            })
+            data, _ = http_bytes(f"{self.comfy_url}/view?{query}")
             target.write_bytes(data)
             return target
-        if parsed.path.startswith("/api/exports/"):
-            local = Path(SETTINGS["exports_dir"]) / parsed.path.rsplit("/", 1)[-1]
-            shutil.copy2(local, target)
-            return target
-        data, _ = http_bytes(str(clip))
-        target.write_bytes(data)
+        url = clip.get("url", "") if isinstance(clip, dict) else str(clip)
+        target.write_bytes(self._fetch_asset(url))
         return target
 
     def _fetch_asset(self, url: str) -> bytes:
         parsed = urllib.parse.urlparse(url)
         query = urllib.parse.parse_qs(parsed.query)
-        if query.get("filename"):
-            data, _ = http_bytes(f"{self.comfy_url}{parsed.path}?{parsed.query}")
+        # Backend-proxied or direct ComfyUI view URLs.
+        if parsed.path in ("/api/comfy/view", "/view"):
+            query_string = urllib.parse.urlencode({
+                "filename": (query.get("filename") or [""])[0],
+                "subfolder": (query.get("subfolder") or [""])[0],
+                "type": (query.get("type") or ["output"])[0],
+            })
+            data, _ = http_bytes(f"{self.comfy_url}/view?{query_string}")
             return data
         if parsed.path.startswith("/api/exports/"):
             local = Path(SETTINGS["exports_dir"]) / parsed.path.rsplit("/", 1)[-1]
