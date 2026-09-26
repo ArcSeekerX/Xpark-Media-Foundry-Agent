@@ -33,6 +33,18 @@ export function MetricsBar({ metrics }: { metrics: Metrics }) {
         <b>{metrics.totalShots - metrics.acceptedShots}</b>
         <span>待完成</span>
       </div>
+      <div className="metric">
+        <b>{metrics.importedAssets}</b>
+        <span>导入素材</span>
+      </div>
+      <div className="metric">
+        <b>{metrics.imageGenerations}</b>
+        <span>生图</span>
+      </div>
+      <div className="metric">
+        <b>{metrics.imageReuses}</b>
+        <span>复用素材</span>
+      </div>
     </div>
   );
 }

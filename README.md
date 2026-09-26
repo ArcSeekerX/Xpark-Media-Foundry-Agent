@@ -73,11 +73,12 @@ Xpark Media Foundry Agent（`Xpark-Media-Foundry-Agent`）是一条视频数字�
 
 | 模块 | 说明 |
 |---|---|
-| **主 Agent（默认）** | 一句话智能引导 → 场景/分镜 + 技能匹配 → 提示词编辑 → 生成与质检 → 修复闭环 → 剪辑拼接 → 素材归档 |
+| **主 Agent（默认）** | 一句话智能引导 → 场景/分镜 + 技能匹配 → 参考图导入/绑定 → 关键帧生图 → 视频生成与质检 → 修复闭环 → 剪辑拼接 → 素材归档 |
+| **一键出片** | 输入 `.md`/`.txt` 文本与图片素材，设定比例/帧数/步数/采样器/种子/风格/旁白等参数，一键完成 分镜 → 逐镜生成 → 质检 → 自动剪辑 并输出成片 |
 | 系统监控 | GPU/CPU/内存/磁盘/网络与推理引擎指标、图表、远程节点面板 |
 | 在线对话 | 多会话、模型选择、思考块、图片上传、流式回复、生成参数 |
 
-后端接口可暂不接入：内置 mock 层（`src/mock/metrics.ts` 合成指标、`src/mock/chat.ts` 合成 SSE 回复），Agent 流程本身也自带 mock 适配器。接入真实后端时设 `VITE_MOCK=0` 与 `VITE_BACKEND_URL`。
+监控与对话接口可暂不接入：内置 mock 层（`src/mock/metrics.ts` 合成指标、`src/mock/chat.ts` 合成 SSE 回复）。接入真实监控后端时设 `VITE_MOCK=0` 与 `VITE_BACKEND_URL`。
 
 ```bash
 cd apps/console
@@ -85,6 +86,61 @@ PATH=/opt/node22/bin:$PATH npm install   # Vite 8 / rolldown 需 Node >= 20
 PATH=/opt/node22/bin:$PATH npm run build
 PATH=/opt/node22/bin:$PATH npm run preview   # http://0.0.0.0:5000
 ```
+
+### 生成后端与前后端对接（apps/api）
+
+`apps/api/server.py` 是一个**零依赖**（仅 Python 标准库）的业务后端，为控制台/前端提供生图与生视频任务接口，浏览器不再直连 ComfyUI：
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/health` | 后端与 ComfyUI 健康状态 |
+| `GET /api/comfy/view?filename=&subfolder=&type=` | 代理 ComfyUI 产物（图片/视频） |
+| `POST /api/images/jobs` | 提交文生图（默认 Qwen Image 2.1 7B 模板），可携带参考图 |
+| `GET /api/images/jobs/{id}` | 查询生图任务与产物 |
+| `POST /api/videos/jobs` | 提交 MiniMax H3 参考生视频任务 |
+| `GET /api/videos/jobs/{id}` | 查询生视频任务与产物 |
+
+```bash
+# 启动生成后端（默认连接 http://127.0.0.1:8188 的 ComfyUI）
+python3 apps/api/server.py --port 8080
+# 零依赖自测（内置假 ComfyUI，无需 GPU / 模型）
+python3 apps/api/test_server.py
+```
+
+前端在 `live` 模式下默认通过 `VITE_BACKEND_URL`（默认 `/api`）调用该后端。把 `VITE_BACKEND_URL` 设为空字符串时回退为浏览器直连 ComfyUI（走 `VITE_COMFY_URL`，开发服务器已代理 `/comfy`）。
+
+生图 / 视频相关环境变量：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `VITE_MODE` | `mock` | 设为 `live` 启用真实后端适配器；`mock` 下生图返回内联 SVG 占位图，便于无 GPU 演示 |
+| `VITE_BACKEND_URL` | `/api` | 业务后端地址；留空则直连 ComfyUI |
+| `VITE_COMFY_URL` | `/comfy` | ComfyUI 地址（直连模式） |
+| `VITE_IMAGE_WORKFLOW` | `/workflows/qwen_image_t2i.api.json` | ComfyUI 生图 API 工作流 |
+| `VITE_IMAGE_WIDTH` / `VITE_IMAGE_HEIGHT` | 768 / 1024 | 关键帧尺寸 |
+| `VITE_IMAGE_STEPS` | 20 | 生图采样步数 |
+| `VITE_IMAGE_SAMPLER` | `euler` | 生图采样器 |
+| `VITE_IMAGE_CFG` | 4 | 生图 CFG |
+| `VITE_IMAGE_ENABLED` | `1` | 设为 `0` 关闭生图步骤 |
+
+主 Agent 流程：一句话 → 场景 / 分镜 / 技能 → **参考图导入与绑定（优先复用）→ 缺素材时生成关键帧** → 视频生成（携带参考图）→ 质检 → 修复 → 剪辑 → 归档。导入的参考图会随渲染请求上传到后端 / ComfyUI，用作文生视频的角色条件；被决策端口判定为 `prefer_imported` 时优先复用导入素材、跳过生图。
+
+### 一键出片
+
+`一键出片` 是控制台的新模块，面向「已有素材直接成片」的场景：
+
+1. 导入 `.md` / `.markdown` / `.txt` 文本素材与图片素材（可多选、可拖拽；图片按顺序对应镜头）。
+2. 设定参数：画面比例（9:16 / 16:9 / 1:1）、片段帧数、采样步数、采样器、随机种子、最多镜头数、风格描述、是否生成旁白、是否自动剪辑。
+3. 点击「一键出片」：后端/前端将文本切分为分镜节拍、按图绑定首帧、逐镜生成并质检，最后自动剪辑输出成片（`state.finalAsset`）。
+4. 无素材时可点「载入示例素材」快速体验。
+
+参数会覆盖技能与配置默认值，贯穿关键帧生图与视频渲染（分辨率、帧数、步数、采样器、种子、风格/旁白提示词）。
+
+### 媒体渲染说明
+
+- mock 模式下，生图返回内联 SVG 占位图；生视频返回内置示例 `public/mock/sample.mp4`，因此**无需后端与 GPU 也能看到图片/视频正确渲染**。
+- live 模式下，后端产物的相对地址（`/api/comfy/view?...`）会按 `VITE_BACKEND_URL` 解析为可访问 URL；`VITE_BACKEND_URL` 配为绝对地址（如 `http://host:8080/api`）时会自动补全后端 origin，避免预览 404。
+- 前端预览对图片/视频自动切换 `<img>` / `<video>`，并在成片面板提供「打开成片」入口。
 
 ---
 

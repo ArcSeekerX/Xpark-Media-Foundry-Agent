@@ -2,7 +2,6 @@
 import type {
   Adapters,
   ArchiveRecord,
-  DecisionInput,
   GeneratedMedia,
   ImageRequest,
   JudgeInput,
@@ -19,30 +18,49 @@ class MockTextModel implements TextModel {
   name = "mock-text";
   available = false;
 
-  async complete(system: string, user: string): Promise<string> {
+  async complete(_system: string, user: string): Promise<string> {
     await sleep(120);
     // Deterministic "polish": keep the user's intent, add production language.
     return user.trim();
   }
 }
 
+function placeholderSvg(prompt: string, seed: number, width: number, height: number): string {
+  const hue = parseInt(shortHash(`${prompt}:${seed}`), 16) % 360;
+  const label = prompt.replace(/\s+/g, " ").slice(0, 48);
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`,
+    `<stop offset="0" stop-color="hsl(${hue},55%,42%)"/>`,
+    `<stop offset="1" stop-color="hsl(${(hue + 40) % 360},60%,22%)"/>`,
+    `</linearGradient></defs>`,
+    `<rect width="100%" height="100%" fill="url(#g)"/>`,
+    `<text x="50%" y="47%" fill="#fff" font-family="sans-serif" font-size="${Math.round(width / 24)}" text-anchor="middle">关键帧占位</text>`,
+    `<text x="50%" y="54%" fill="#ffffffcc" font-family="sans-serif" font-size="${Math.round(width / 40)}" text-anchor="middle">${label}</text>`,
+    `<text x="50%" y="60%" fill="#ffffff99" font-family="monospace" font-size="${Math.round(width / 48)}" text-anchor="middle">seed ${seed}</text>`,
+    `</svg>`,
+  ].join("");
+}
+
 class MockImageModel {
   name = "placeholder-image";
-  available = false; // no local text-to-image checkpoint on this host
+  available = true; // renders an inline SVG so the UI/flow works with no backend
   private seq = 0;
 
   async generate(req: ImageRequest): Promise<GeneratedMedia> {
     await sleep(600);
     this.seq += 1;
+    const svg = placeholderSvg(req.prompt, req.seed, req.width, req.height);
     return {
       assetId: uid("img"),
-      storageKey: `generated/images/${req.shot.shotId}_${this.seq}.png`,
+      storageKey: `generated/images/${req.shot.shotId}_${this.seq}.svg`,
       previewKey: `previews/${req.shot.shotId}_${this.seq}.jpg`,
       mediaType: "image",
       width: req.width,
       height: req.height,
       durationS: 0,
       seed: req.seed,
+      remoteUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
     };
   }
 }
@@ -52,7 +70,7 @@ class MockVideoModel {
   available = true;
   private polls = new Map<string, number>();
 
-  async render(req: RenderRequest): Promise<RenderHandle> {
+  async render(_req: RenderRequest): Promise<RenderHandle> {
     await sleep(250);
     const promptId = uid("prompt");
     this.polls.set(promptId, 0);
@@ -78,13 +96,14 @@ class MockVideoModel {
       artifact: {
         assetId: uid("vid"),
         storageKey: `generated/videos/${handle.promptId}.mp4`,
-        previewKey: `previews/${handle.promptId}.jpg`,
+        previewKey: "mock/poster.jpg",
         mediaType: "video",
         width: 512,
         height: 512,
         durationS: 1,
         seed: 20260925,
-        remoteUrl: undefined,
+        // Bundled sample so the "video" is actually playable with no backend.
+        remoteUrl: "/mock/sample.mp4",
       },
     };
   }
@@ -93,8 +112,11 @@ class MockVideoModel {
 class MockJudge {
   name = "mock-vision-judge";
   available = true;
+  private readonly acceptThreshold: number;
 
-  constructor(private readonly acceptThreshold: number) {}
+  constructor(acceptThreshold: number) {
+    this.acceptThreshold = acceptThreshold;
+  }
 
   async evaluate(input: JudgeInput): Promise<ScoreReport> {
     await sleep(700);

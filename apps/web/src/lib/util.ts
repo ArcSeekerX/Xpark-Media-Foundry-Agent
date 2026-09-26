@@ -27,6 +27,22 @@ export function shortHash(input: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
+export function resolutionFor(
+  aspect: string,
+  width?: number,
+  height?: number,
+): { width: number; height: number } {
+  if (width && height) return { width, height };
+  switch (aspect) {
+    case "16:9":
+      return { width: 640, height: 360 };
+    case "1:1":
+      return { width: 512, height: 512 };
+    default:
+      return { width: 360, height: 640 };
+  }
+}
+
 export function secondsToTimecode(s: number, fps = 24): string {
   const frames = Math.round(s * fps);
   const mm = Math.floor(frames / (fps * 60));

@@ -13,12 +13,14 @@ import type { DecisionInput } from "./types";
 export class OpenAITextModel implements TextModel {
   name = "local-qwen";
   available: boolean;
+  private readonly baseUrl: string;
+  private readonly apiKey: string;
+  private readonly model: string;
 
-  constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
-    private readonly model: string,
-  ) {
+  constructor(baseUrl: string, apiKey: string, model: string) {
+    this.baseUrl = baseUrl;
+    this.apiKey = apiKey;
+    this.model = model;
     this.available = baseUrl.length > 0;
   }
 
@@ -49,8 +51,10 @@ export class OpenAITextModel implements TextModel {
 export class HttpDecisionPort implements DecisionPort {
   name: string;
   available: boolean;
+  private readonly url: string;
 
-  constructor(private readonly url: string, engine: string) {
+  constructor(url: string, engine: string) {
+    this.url = url;
     this.name = engine;
     this.available = url.length > 0;
   }
@@ -69,8 +73,10 @@ export class HttpDecisionPort implements DecisionPort {
 export class HttpAssetStore implements AssetStore {
   name = "http-asset-store";
   available: boolean;
+  private readonly url: string;
 
-  constructor(private readonly url: string) {
+  constructor(url: string) {
+    this.url = url;
     this.available = url.length > 0;
   }
 

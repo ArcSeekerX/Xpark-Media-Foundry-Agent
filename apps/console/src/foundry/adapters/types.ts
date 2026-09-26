@@ -2,6 +2,7 @@ import type {
   Asset,
   DecisionAdvice,
   Progress,
+  ReferenceImage,
   RenderRequest,
   ScoreReport,
   ShotSpec,
@@ -33,6 +34,8 @@ export interface ImageRequest {
   height: number;
   seed: number;
   skillId?: string;
+  referenceImages?: ReferenceImage[];
+  onProgress?: (progress: Progress) => void;
 }
 
 export interface ImageModel {
@@ -106,6 +109,12 @@ export interface AssetStore {
   archive(projectId: string, assets: Asset[], extra?: unknown): Promise<ArchiveRecord>;
 }
 
+export interface BackendPort {
+  name: string;
+  available: boolean;
+  health(): Promise<{ ok: boolean }>;
+}
+
 export interface Adapters {
   text: TextModel;
   image: ImageModel;
@@ -113,4 +122,6 @@ export interface Adapters {
   judge: VisionJudge;
   decision: DecisionPort;
   store: AssetStore;
+  // Present only when the business generation backend is configured.
+  backend?: BackendPort;
 }

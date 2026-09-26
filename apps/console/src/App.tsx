@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Clapperboard, Sparkles } from 'lucide-react'
 import { useMetrics } from './hooks/useMetrics'
 import { useMetricsHistory } from './hooks/useMetricsHistory'
 import { AgentView } from './components/views/AgentView'
+import { OneClickStudio } from './components/views/OneClickStudio'
 import { SystemView } from './components/views/SystemView'
 import { ChatView } from './components/views/ChatView'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -101,6 +102,13 @@ function App() {
                   <span>主 Agent</span>
                 </TabsTrigger>
                 <TabsTrigger
+                  value="studio"
+                  className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
+                >
+                  <Clapperboard className="size-5" />
+                  <span>一键出片</span>
+                </TabsTrigger>
+                <TabsTrigger
                   value="system"
                   className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
                 >
@@ -143,6 +151,10 @@ function App() {
 
               <TabsContent value="agent" className="flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
                 <AgentView />
+              </TabsContent>
+
+              <TabsContent value="studio" className="flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
+                <OneClickStudio />
               </TabsContent>
 
               <TabsContent value="system" className="flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">

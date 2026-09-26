@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAgentFlow } from "../flow/useAgentFlow";
 import { config } from "../config";
 import { Composer } from "./Composer";
@@ -10,9 +10,28 @@ import { PromptEditor } from "./PromptEditor";
 import { ExportPanel } from "./ExportPanel";
 import { EventLogView } from "./EventLogView";
 import { MetricsBar } from "./MetricsBar";
+import { ReferenceAssets, assetUrl } from "./ReferenceAssets";
+import type { Asset } from "../types";
 
 function Availability({ flow }: { flow: ReturnType<typeof useAgentFlow> }) {
-  const { text, image, video, judge, decision, store } = flow.adapters;
+  const { text, image, video, judge, decision, store, backend } = flow.adapters;
+  const [backendOk, setBackendOk] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!backend?.available) {
+      setBackendOk(false);
+      return;
+    }
+    let alive = true;
+    backend
+      .health()
+      .then(() => alive && setBackendOk(true))
+      .catch(() => alive && setBackendOk(false));
+    return () => {
+      alive = false;
+    };
+  }, [backend]);
+
   const items: [string, boolean][] = [
     ["text", text.available],
     ["image", image.available],
@@ -20,6 +39,7 @@ function Availability({ flow }: { flow: ReturnType<typeof useAgentFlow> }) {
     ["judge", judge.available],
     ["decision", decision.available],
     ["store", store.available],
+    ["backend", Boolean(backendOk)],
   ];
   return (
     <div className="chips">
@@ -52,6 +72,16 @@ export function AgentPage() {
     const id = activeRun?.artifactIds.at(-1);
     return id ? state.assets.find((a) => a.assetId === id) : undefined;
   }, [activeRun, state.assets]);
+
+  const boundAssets = useMemo(
+    () =>
+      (activeShot?.bindings ?? [])
+        .map((b) => state.assets.find((a) => a.assetId === b.assetId))
+        .filter((a): a is Asset => Boolean(a)),
+    [activeShot, state.assets],
+  );
+  const previewAsset =
+    activeAsset ?? [...boundAssets].reverse().find((a) => a.mediaType === "image");
 
   return (
     <div className="app">
@@ -129,18 +159,39 @@ export function AgentPage() {
             </div>
           </section>
 
+          {activeShot && (
+            <section className="card">
+              <header>
+                <h2>5 · 视觉资产 · 参考图与关键帧</h2>
+              </header>
+              <div className="body">
+                <ReferenceAssets
+                  shot={activeShot}
+                  assets={state.assets}
+                  busy={state.busy}
+                  imageReady={flow.adapters.image.available}
+                  imageName={flow.adapters.image.name}
+                  onImport={(file, role) => void flow.importAsset(file, activeShot.shotId, role)}
+                  onBind={(assetId, role) => flow.bindAsset(activeShot.shotId, assetId, role)}
+                  onUnbind={(bindingId) => flow.unbindAsset(activeShot.shotId, bindingId)}
+                  onGenerate={() => void flow.generateImage(activeShot.shotId)}
+                />
+              </div>
+            </section>
+          )}
+
           <section className="card">
             <header>
-              <h2>5 · 提示词与镜头规格</h2>
+              <h2>6 · 提示词与镜头规格</h2>
             </header>
             <div className="body">
-              <PromptEditor shot={activeShot} asset={activeAsset} onSave={flow.editShotPrompt} />
+              <PromptEditor shot={activeShot} asset={previewAsset} onSave={flow.editShotPrompt} />
             </div>
           </section>
 
           <section className="card">
             <header>
-              <h2>6 · 质检报告</h2>
+              <h2>7 · 质检报告</h2>
             </header>
             <div className="body">
               <QCPanel report={activeRun?.score} />
@@ -149,7 +200,7 @@ export function AgentPage() {
 
           <section className="card">
             <header>
-              <h2>7 · 剪辑拼接与归档</h2>
+              <h2>8 · 剪辑拼接与归档</h2>
             </header>
             <div className="body">
               <ExportPanel
@@ -165,7 +216,7 @@ export function AgentPage() {
 
           <section className="card">
             <header>
-              <h2>8 · 步骤时间线</h2>
+              <h2>9 · 步骤时间线</h2>
             </header>
             <div className="body">
               <StepTimeline
@@ -176,7 +227,7 @@ export function AgentPage() {
 
           <section className="card">
             <header>
-              <h2>9 · 事件流 (SSE)</h2>
+              <h2>10 · 事件流 (SSE)</h2>
             </header>
             <div className="body">
               <EventLogView events={state.events} />

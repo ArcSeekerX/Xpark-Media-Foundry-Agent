@@ -4,6 +4,7 @@
 import type {
   Brief,
   CameraSpec,
+  ProductionParams,
   Scene,
   Shot,
   ShotSpec,
@@ -157,4 +158,124 @@ export function planProject(sentence: string, projectId: string): Plan {
   }
 
   return { brief, scenes, shots, routings };
+}
+
+// ---------------------------------------------------------------------------
+// Materials -> plan (one-click production): split markdown/text into beats and
+// map one shot per supplied image.
+// ---------------------------------------------------------------------------
+
+export interface ScriptSegment {
+  title: string;
+  narration: string;
+}
+
+export function splitScript(script: string): ScriptSegment[] {
+  const segments: ScriptSegment[] = [];
+  let title = "";
+  let buffer: string[] = [];
+  const flush = () => {
+    if (buffer.length > 0 || title) {
+      segments.push({ title, narration: buffer.join(" ").trim() });
+    }
+    buffer = [];
+  };
+  for (const raw of script.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) {
+      if (buffer.length > 0) flush();
+      continue;
+    }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    if (heading) {
+      flush();
+      title = heading[1].trim();
+      continue;
+    }
+    buffer.push(line.replace(/^([-*]|\d+\.)\s+/, ""));
+  }
+  flush();
+  // Prefer real narration beats; only fall back to headings if there is no body.
+  const withNarration = segments.filter((s) => s.narration.trim());
+  return withNarration.length > 0 ? withNarration : segments;
+}
+
+export interface MaterialPlanInput {
+  title: string;
+  script: string;
+  imageCount: number;
+  params: ProductionParams;
+}
+
+export function planFromMaterials(input: MaterialPlanInput, projectId: string): Plan {
+  const scriptText = `${input.title}\n${input.script}`.trim();
+  const timeOfDay = inferTimeOfDay(scriptText);
+  const ranked = routeSkills(scriptText, timeOfDay, 3);
+  const skill = ranked[0]?.skill ?? bestSkill(scriptText, timeOfDay).skill;
+  const segments = splitScript(input.script);
+  const target = Math.max(
+    1,
+    Math.min(
+      input.params.maxShots,
+      input.imageCount || segments.length || 1,
+      Math.max(input.imageCount, segments.length, 1),
+    ),
+  );
+
+  const brief: Brief = {
+    theme: input.title || scriptText.slice(0, 40),
+    durationS: Math.round((input.params.frames / 24) * 10) / 10,
+    style: input.params.style || skill.imageStyle || "cinematic",
+    aspectRatio: input.params.aspectRatio,
+    audience: "short-form",
+  };
+
+  const sceneId = uid("scene");
+  const sceneShots: Shot[] = [];
+  const shots: Shot[] = [];
+
+  for (let i = 0; i < target; i += 1) {
+    const segment = segments[i] ?? segments[segments.length - 1];
+    const heading = segment?.title?.trim();
+    const narration = segment?.narration?.trim();
+    const action =
+      narration || heading || `${input.title || "镜头"} 第 ${i + 1} 个片段`;
+    const shot = buildShot(sceneId, i, action, skill);
+    shot.title = heading || `镜头 ${i + 1}`;
+    shot.spec = {
+      ...shot.spec,
+      durationS: brief.durationS,
+      aspectRatio: brief.aspectRatio,
+      continuity: input.params.style ? { style: input.params.style } : {},
+      acceptance: {
+        ...shot.spec.acceptance,
+        required: input.params.narrate
+          ? ["主体清晰", "动作完成", "旁白清晰"]
+          : ["主体清晰", "动作完成"],
+      },
+    };
+    if (input.params.style) {
+      shot.prompt = `${shot.prompt}\n\nstyle: ${input.params.style}`;
+    }
+    if (input.params.narrate && narration) {
+      shot.prompt = `${shot.prompt}\n\ndialogue: ${narration}`;
+    }
+    sceneShots.push(shot);
+    shots.push(shot);
+  }
+
+  const scene: Scene = {
+    sceneId,
+    projectId,
+    index: 0,
+    title: segments[0]?.title || input.title || "主场景",
+    synopsis: input.title || scriptText.slice(0, 80),
+    location: "多场景",
+    timeOfDay,
+    mood: "按素材自动编排",
+    skillIds: [skill.skillId],
+    shotIds: sceneShots.map((s) => s.shotId),
+  };
+
+  return { brief, scenes: [scene], shots, routings: [ranked] };
 }

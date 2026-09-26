@@ -22,21 +22,32 @@ export function PromptEditor({
     return <p className="muted">选择左侧一个镜头以查看/编辑提示词与镜头规格。</p>;
   }
 
-  const url = asset?.metadata?.remoteUrl as string | undefined;
+  const url = (asset?.metadata?.remoteUrl ?? asset?.metadata?.dataUrl) as
+    | string
+    | undefined;
 
   return (
     <div>
-      <div className="thumb">
+      <div className="preview-frame">
         {asset?.mediaType === "video" && url ? (
           <video src={url} controls muted />
         ) : asset?.mediaType === "image" && url ? (
           <img src={url} alt="candidate" />
         ) : (
-          <span>候选预览（渲染完成后显示）</span>
+          <span className="preview-note">候选预览：导入参考图或生成关键帧后显示</span>
+        )}
+        {asset && url && (
+          <div className="preview-tags">
+            <span className={`badge ${asset.source === "imported" ? "" : "green"}`}>
+              {asset.source === "imported" ? "导入" : "生成"}
+            </span>
+            <span className="badge">{asset.mediaType}</span>
+          </div>
         )}
       </div>
 
       <div className="row" style={{ gap: 6 }}>
+        <span className="badge">{shot.spec.materialPolicy}</span>
         <span className="badge">{shot.spec.camera.size}</span>
         <span className="badge">{shot.spec.camera.movement}</span>
         <span className="badge">{shot.spec.aspectRatio}</span>

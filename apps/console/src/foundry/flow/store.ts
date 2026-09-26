@@ -1,8 +1,10 @@
 import type {
   AgentMessage,
   Asset,
+  AssetBinding,
   Brief,
   FlowEvent,
+  ProductionParams,
   Project,
   Run,
   Scene,
@@ -20,6 +22,9 @@ export interface Metrics {
   repairCount: number;
   humanReview: number;
   firstPassAccepted: number;
+  importedAssets: number;
+  imageGenerations: number;
+  imageReuses: number;
 }
 
 export interface State {
@@ -35,6 +40,7 @@ export interface State {
   routings: Record<string, SkillSelection[]>;
   phase: "idle" | "planning" | "planned" | "producing" | "composing" | "done";
   busy: boolean;
+  production?: ProductionParams;
   finalAsset?: Asset;
   archive?: ArchiveRecord;
   metrics: Metrics;
@@ -58,6 +64,9 @@ export const initialState: State = {
     repairCount: 0,
     humanReview: 0,
     firstPassAccepted: 0,
+    importedAssets: 0,
+    imageGenerations: 0,
+    imageReuses: 0,
   },
 };
 
@@ -72,9 +81,21 @@ export type Action =
       shots: Shot[];
       routings: Record<string, SkillSelection[]>;
     }
+  | {
+      type: "set_materials";
+      project: Project;
+      brief: Brief;
+      scenes: Scene[];
+      shots: Shot[];
+      routings: Record<string, SkillSelection[]>;
+      assets: Asset[];
+      production: ProductionParams;
+    }
   | { type: "add_message"; message: AgentMessage }
   | { type: "add_event"; event: FlowEvent }
   | { type: "patch_shot"; shotId: string; patch: Partial<Shot> }
+  | { type: "add_binding"; shotId: string; binding: AssetBinding }
+  | { type: "remove_binding"; shotId: string; bindingId: string }
   | { type: "patch_scene"; sceneId: string; patch: Partial<Scene> }
   | { type: "add_run"; run: Run }
   | { type: "patch_run"; runId: string; patch: Partial<Run> }
@@ -115,6 +136,23 @@ export function reducer(state: State, action: Action): State {
         phase: "planned",
         metrics: { ...state.metrics, totalShots: action.shots.length },
       };
+    case "set_materials":
+      return {
+        ...state,
+        project: action.project,
+        brief: action.brief,
+        scenes: action.scenes,
+        shots: action.shots,
+        routings: action.routings,
+        assets: [...state.assets, ...action.assets],
+        production: action.production,
+        phase: "planned",
+        metrics: {
+          ...state.metrics,
+          totalShots: action.shots.length,
+          importedAssets: state.metrics.importedAssets + action.assets.length,
+        },
+      };
     case "add_message":
       return { ...state, messages: [...state.messages, action.message] };
     case "add_event":
@@ -125,6 +163,41 @@ export function reducer(state: State, action: Action): State {
         shots: state.shots.map((s) =>
           s.shotId === action.shotId ? { ...s, ...action.patch } : s,
         ),
+      };
+    case "add_binding":
+      return {
+        ...state,
+        shots: state.shots.map((s) => {
+          if (s.shotId !== action.shotId) return s;
+          const bindings = [...s.bindings, action.binding];
+          const referenceAssets = s.spec.referenceAssets.includes(action.binding.assetId)
+            ? s.spec.referenceAssets
+            : [...s.spec.referenceAssets, action.binding.assetId];
+          const spec: Shot["spec"] = {
+            ...s.spec,
+            referenceAssets,
+            sceneAssetId:
+              action.binding.role === "scene" ? action.binding.assetId : s.spec.sceneAssetId,
+          };
+          return { ...s, bindings, spec };
+        }),
+      };
+    case "remove_binding":
+      return {
+        ...state,
+        shots: state.shots.map((s) => {
+          if (s.shotId !== action.shotId) return s;
+          const bindings = s.bindings.filter((b) => b.bindingId !== action.bindingId);
+          const stillUsed = new Set(bindings.map((b) => b.assetId));
+          return {
+            ...s,
+            bindings,
+            spec: {
+              ...s.spec,
+              referenceAssets: s.spec.referenceAssets.filter((id) => stillUsed.has(id)),
+            },
+          };
+        }),
       };
     case "patch_scene":
       return {

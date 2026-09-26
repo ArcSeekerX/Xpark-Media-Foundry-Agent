@@ -270,6 +270,31 @@ export interface PromptSpec {
   variants: string[];
 }
 
+// Parameters for the one-click "materials -> finished video" pipeline.
+export interface ProductionParams {
+  aspectRatio: Brief["aspectRatio"];
+  width?: number;
+  height?: number;
+  frames: number;
+  steps: number;
+  sampler: string;
+  seed: number;
+  style: string;
+  narrate: boolean;
+  maxShots: number;
+  autoCompose: boolean;
+}
+
+// A concrete image the render pipeline can upload as a ComfyUI reference.
+// `dataUrl` is a browser-safe payload (imported file or generated result).
+export interface ReferenceImage {
+  assetId: Id;
+  name: string;
+  dataUrl: string;
+  role?: AssetBinding["role"];
+  source?: AssetSource;
+}
+
 export interface RenderRequest {
   shotId: Id;
   promptSpec: PromptSpec;
@@ -280,6 +305,7 @@ export interface RenderRequest {
   steps: number;
   sampler: string;
   refAssetIds: Id[];
+  referenceImages?: ReferenceImage[];
   workflowHash: string;
 }
 

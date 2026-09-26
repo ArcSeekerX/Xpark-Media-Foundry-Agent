@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Bot,
   Clapperboard,
   Film,
+  Image as ImageIcon,
   ListChecks,
   Play,
   RotateCcw,
@@ -14,6 +15,19 @@ import { SKILLS } from '@/foundry/skills/registry'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ReferenceAssets, assetUrl } from './ReferenceAssets'
+import type { Asset, Shot } from '@/foundry/types'
+
+function firstImageUrl(shot: Shot, assets: Asset[]): string | undefined {
+  for (const binding of shot.bindings) {
+    const asset = assets.find((a) => a.assetId === binding.assetId)
+    if (asset?.mediaType === 'image') {
+      const url = assetUrl(asset)
+      if (url) return url
+    }
+  }
+  return undefined
+}
 
 const EXAMPLES = [
   '做一个雨夜天台短剧：女主停步回头看向红色信号灯，5 秒',
@@ -41,6 +55,23 @@ export function AgentView() {
   const { state } = flow
   const [text, setText] = useState('')
   const [activeShotId, setActiveShotId] = useState<string | undefined>()
+  const [backendOk, setBackendOk] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    const backend = flow.adapters.backend
+    if (!backend?.available) {
+      setBackendOk(false)
+      return
+    }
+    let alive = true
+    backend
+      .health()
+      .then(() => alive && setBackendOk(true))
+      .catch(() => alive && setBackendOk(false))
+    return () => {
+      alive = false
+    }
+  }, [flow.adapters.backend])
 
   const activeShot = useMemo(
     () => state.shots.find((s) => s.shotId === activeShotId) ?? state.shots[0],
@@ -54,6 +85,18 @@ export function AgentView() {
     const id = activeRun?.artifactIds.at(-1)
     return id ? state.assets.find((a) => a.assetId === id) : undefined
   }, [activeRun, state.assets])
+
+  const boundAssets = useMemo(
+    () =>
+      (activeShot?.bindings ?? [])
+        .map((b) => state.assets.find((a) => a.assetId === b.assetId))
+        .filter((a): a is NonNullable<typeof a> => Boolean(a)),
+    [activeShot, state.assets],
+  )
+  // Prefer a finished video, otherwise the most recent reference/keyframe image.
+  const previewAsset =
+    activeAsset ?? [...boundAssets].reverse().find((a) => a.mediaType === 'image')
+  const previewUrl = assetUrl(previewAsset)
 
   const submit = () => {
     if (!text.trim() || state.busy) return
@@ -78,7 +121,14 @@ export function AgentView() {
                   video {flow.adapters.video.available ? 'ready' : 'off'}
                 </Badge>
                 <Badge variant={flow.adapters.image.available ? 'default' : 'outline'} className="text-[10px]">
-                  image {flow.adapters.image.available ? 'ready' : 'placeholder'}
+                  image {flow.adapters.image.available ? 'ready' : 'off'}
+                </Badge>
+                <Badge
+                  variant={backendOk ? 'default' : 'outline'}
+                  className="text-[10px]"
+                  title={flow.adapters.backend?.name ?? '未配置业务后端'}
+                >
+                  backend {flow.adapters.backend ? (backendOk ? 'online' : 'offline') : 'n/a'}
                 </Badge>
               </div>
             </CardHeader>
@@ -222,6 +272,14 @@ export function AgentView() {
                                 {shot.skillId}
                               </Badge>
                             )}
+                            {(() => {
+                              const thumb = firstImageUrl(shot, state.assets)
+                              return thumb ? (
+                                <span className="size-6 overflow-hidden rounded border border-border">
+                                  <img src={thumb} alt="" className="h-full w-full object-cover" />
+                                </span>
+                              ) : null
+                            })()}
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">{shot.spec.action}</p>
                           <div className="mt-2 flex items-center gap-2">
@@ -293,9 +351,35 @@ export function AgentView() {
                   }
                 />
                 <Metric label="待完成" value={String(state.metrics.totalShots - accepted)} />
+                <Metric label="导入素材" value={String(state.metrics.importedAssets)} />
+                <Metric label="生图" value={String(state.metrics.imageGenerations)} />
+                <Metric label="复用素材" value={String(state.metrics.imageReuses)} />
               </div>
             </CardContent>
           </Card>
+
+          {activeShot && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ImageIcon size={16} className="text-[#76B900]" /> 视觉资产 · 参考图与关键帧
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ReferenceAssets
+                  shot={activeShot}
+                  assets={state.assets}
+                  busy={state.busy}
+                  imageReady={flow.adapters.image.available}
+                  imageName={flow.adapters.image.name}
+                  onImport={(file, role) => void flow.importAsset(file, activeShot.shotId, role)}
+                  onBind={(assetId, role) => flow.bindAsset(activeShot.shotId, assetId, role)}
+                  onUnbind={(bindingId) => flow.unbindAsset(activeShot.shotId, bindingId)}
+                  onGenerate={() => void flow.generateImage(activeShot.shotId)}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
@@ -307,15 +391,34 @@ export function AgentView() {
               {!activeShot && <p className="text-sm text-muted-foreground">选择左侧一个镜头以编辑。</p>}
               {activeShot && (
                 <>
-                  <div className="aspect-video w-full rounded-lg border border-border bg-muted/40 grid place-items-center text-xs text-muted-foreground">
-                    {activeAsset?.mediaType === 'video' &&
-                    typeof activeAsset.metadata.remoteUrl === 'string' ? (
-                      <video src={activeAsset.metadata.remoteUrl} controls muted className="h-full w-full rounded-lg object-cover" />
-                    ) : (
-                      '候选预览（渲染完成后显示）'
+                  <div className="relative overflow-hidden rounded-lg border border-border bg-gradient-to-br from-muted/60 to-muted/20">
+                    <div className="grid min-h-[220px] place-items-center">
+                      {previewAsset?.mediaType === 'video' && previewUrl ? (
+                        <video src={previewUrl} controls muted className="max-h-[320px] w-full object-contain" />
+                      ) : previewUrl ? (
+                        <img src={previewUrl} alt="" className="max-h-[320px] w-full object-contain" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-1.5 px-4 py-10 text-center text-xs text-muted-foreground">
+                          <ImageIcon size={22} className="opacity-60" />
+                          候选预览：导入参考图或生成关键帧后显示
+                        </div>
+                      )}
+                    </div>
+                    {previewAsset && (
+                      <div className="absolute left-2 top-2 flex gap-1.5">
+                        <Badge variant="secondary" className="text-[10px]">
+                          {previewAsset.source === 'imported' ? '导入' : '生成'}
+                        </Badge>
+                        <Badge variant="outline" className="bg-background/70 text-[10px]">
+                          {previewAsset.mediaType}
+                        </Badge>
+                      </div>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline" className="text-[10px]">
+                      {activeShot.spec.materialPolicy}
+                    </Badge>
                     <Badge variant="outline" className="text-[10px]">{activeShot.spec.camera.size}</Badge>
                     <Badge variant="outline" className="text-[10px]">{activeShot.spec.camera.movement}</Badge>
                     <Badge variant="outline" className="text-[10px]">{activeShot.spec.aspectRatio}</Badge>

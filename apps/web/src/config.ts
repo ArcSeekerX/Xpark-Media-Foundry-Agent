@@ -35,6 +35,18 @@ export const config = {
     sampler: env.VITE_VIDEO_SAMPLER ?? "res_multistep",
   },
 
+  // Text-to-image keyframe / character-reference generation (Qwen Image 2.1 7B
+  // by default) executed as a ComfyUI API workflow.
+  image: {
+    enabled: (env.VITE_IMAGE_ENABLED ?? "1") !== "0",
+    workflowUrl: env.VITE_IMAGE_WORKFLOW ?? "/workflows/qwen_image_t2i.api.json",
+    width: Number(env.VITE_IMAGE_WIDTH ?? 768),
+    height: Number(env.VITE_IMAGE_HEIGHT ?? 1024),
+    steps: Number(env.VITE_IMAGE_STEPS ?? 20),
+    sampler: env.VITE_IMAGE_SAMPLER ?? "euler",
+    cfg: Number(env.VITE_IMAGE_CFG ?? 4),
+  },
+
   quality: {
     acceptThreshold: Number(env.VITE_QC_ACCEPT ?? 0.85),
     maxRepairs: Number(env.VITE_QC_MAX_REPAIRS ?? 2),

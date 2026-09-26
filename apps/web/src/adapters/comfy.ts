@@ -78,7 +78,11 @@ export class ComfyVideoModel implements VideoModel {
   available = true;
   private template?: Graph;
 
-  constructor(private readonly opts: ComfyOptions) {}
+  private readonly opts: ComfyOptions;
+
+  constructor(opts: ComfyOptions) {
+    this.opts = opts;
+  }
 
   private async loadTemplate(): Promise<Graph> {
     if (!this.template) {

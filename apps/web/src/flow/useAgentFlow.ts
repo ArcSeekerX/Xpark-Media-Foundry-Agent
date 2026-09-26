@@ -2,22 +2,24 @@ import { useCallback, useMemo, useReducer, useRef } from "react";
 import { createAdapters } from "../adapters";
 import type { Adapters, GeneratedMedia, RenderHandle } from "../adapters/types";
 import { refinePrompt } from "../agent/refine";
-import { planProject } from "../agent/planner";
+import { planProject, planFromMaterials } from "../agent/planner";
 import { applySkill, bestSkill } from "../skills/router";
 import { skillById } from "../skills/registry";
 import { config } from "../config";
 import { EventLog } from "./events";
 import { initialState, reducer } from "./store";
 import type { Metrics, State } from "./store";
-import { nowIso, shortHash, sleep, uid } from "../lib/util";
+import { nowIso, resolutionFor, shortHash, sleep, uid } from "../lib/util";
 import type {
   AgentMessage,
   Asset,
+  AssetBinding,
   FlowEvent,
+  ProductionParams,
   PromptSpec,
+  ReferenceImage,
   RenderRequest,
   Run,
-  ScoreReport,
   Shot,
 } from "../types";
 
@@ -40,6 +42,41 @@ function makeAsset(
   };
 }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("file read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function assetImage(asset: Asset | undefined): string | undefined {
+  if (!asset || asset.mediaType !== "image") return undefined;
+  const url = asset.metadata.remoteUrl ?? asset.metadata.dataUrl;
+  return typeof url === "string" ? url : undefined;
+}
+
+function assetReference(asset: Asset): ReferenceImage | undefined {
+  const dataUrl = assetImage(asset);
+  if (!dataUrl) return undefined;
+  const name =
+    typeof asset.metadata.name === "string"
+      ? asset.metadata.name
+      : `${asset.assetId}.png`;
+  return { assetId: asset.assetId, name, dataUrl, source: asset.source };
+}
+
+function collectBoundReferences(state: State, shot: Shot): ReferenceImage[] {
+  const refs: ReferenceImage[] = [];
+  for (const binding of shot.bindings) {
+    const asset = state.assets.find((a) => a.assetId === binding.assetId);
+    const ref = asset ? assetReference(asset) : undefined;
+    if (ref) refs.push({ ...ref, role: binding.role });
+  }
+  return refs;
+}
+
 export interface AgentFlow {
   state: State;
   adapters: Adapters;
@@ -47,11 +84,25 @@ export interface AgentFlow {
   guide: (sentence: string) => Promise<void>;
   editShotPrompt: (shotId: string, positive: string, negative: string) => void;
   selectSkill: (sceneId: string, skillId: string) => void;
+  importAsset: (
+    file: File,
+    shotId?: string,
+    role?: AssetBinding["role"],
+  ) => Promise<Asset | undefined>;
+  bindAsset: (shotId: string, assetId: string, role: AssetBinding["role"]) => void;
+  unbindAsset: (shotId: string, bindingId: string) => void;
+  generateImage: (shotId: string) => Promise<Asset | undefined>;
   generateShot: (shotId: string) => Promise<void>;
   generateAll: () => Promise<void>;
   review: (shotId: string, verdict: "accept" | "reject") => void;
-  compose: () => Promise<void>;
+  compose: (options?: { allowPartial?: boolean }) => Promise<void>;
   archive: () => Promise<void>;
+  produceFromMaterials: (input: {
+    title: string;
+    mdFiles: File[];
+    images: File[];
+    params: ProductionParams;
+  }) => Promise<void>;
   reset: () => void;
 }
 
@@ -144,6 +195,19 @@ export function useAgentFlow(): AgentFlow {
         }
       }
 
+      // Apply the decision port's material policy to every shot spec. The
+      // small model only proposes; rules still decide what the pipeline does.
+      const preferImported = selectedAction !== "generate";
+      const plannedShots = plan.shots.map((shot) => ({
+        ...shot,
+        spec: {
+          ...shot.spec,
+          materialPolicy: (preferImported ? "prefer_imported" : "generate") as
+            | "prefer_imported"
+            | "generate",
+        },
+      }));
+
       dispatch({
         type: "set_plan",
         project: {
@@ -156,7 +220,7 @@ export function useAgentFlow(): AgentFlow {
         },
         brief: plan.brief,
         scenes: plan.scenes,
-        shots: plan.shots,
+        shots: plannedShots,
         routings: Object.fromEntries(
           plan.scenes.map((s) => [s.sceneId, plan.routings[s.index] ?? []]),
         ),
@@ -204,6 +268,198 @@ export function useAgentFlow(): AgentFlow {
   );
 
   // -------------------------------------------------------------------------
+  // 1b. Asset service: import reference art, bind to shots, generate keyframes
+  // -------------------------------------------------------------------------
+  const bindAsset = useCallback(
+    (shotId: string, assetId: string, role: AssetBinding["role"]) => {
+      const shot = store.current.shots.find((s) => s.shotId === shotId);
+      if (!shot) return;
+      const binding: AssetBinding = {
+        bindingId: uid("bind"),
+        shotId,
+        role,
+        assetId,
+        assetVersion: 1,
+      };
+      dispatch({ type: "add_binding", shotId, binding });
+      say(`已把素材绑定到镜头「${shot.title}」（用途：${role}）。`, "tool");
+    },
+    [say],
+  );
+
+  const unbindAsset = useCallback((shotId: string, bindingId: string) => {
+    dispatch({ type: "remove_binding", shotId, bindingId });
+  }, []);
+
+  const importAsset = useCallback(
+    async (file: File, shotId?: string, role: AssetBinding["role"] = "character") => {
+      const project = store.current.project;
+      if (!project) {
+        say("请先用一句话生成项目与分镜，再导入素材。", "agent");
+        return undefined;
+      }
+      if (!file.type.startsWith("image/")) {
+        say(`仅支持图片参考素材，已忽略「${file.name}」。`, "tool");
+        return undefined;
+      }
+      let dataUrl: string;
+      try {
+        dataUrl = await readFileAsDataUrl(file);
+      } catch {
+        say(`读取「${file.name}」失败。`, "tool");
+        return undefined;
+      }
+      const asset: Asset = {
+        assetId: uid("asset"),
+        projectId: project.projectId,
+        source: "imported",
+        mediaType: "image",
+        version: 1,
+        storageKey: `imports/${project.projectId}/${file.name}`,
+        metadata: {
+          name: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          dataUrl,
+          remoteUrl: dataUrl,
+        },
+        state: "READY",
+      };
+      dispatch({ type: "add_asset", asset });
+      dispatch({ type: "bump", key: "importedAssets" });
+      emit({
+        projectId: project.projectId,
+        type: "artifact.created",
+        summary: `导入参考素材 ${file.name}`,
+        actor: "asset-service",
+        artifactIds: [asset.assetId],
+      });
+      if (shotId) bindAsset(shotId, asset.assetId, role);
+      say(
+        `已导入参考图「${file.name}」${shotId ? `并绑定到镜头（${role}）` : "到素材库"}。`,
+        "tool",
+      );
+      return asset;
+    },
+    [bindAsset, emit, say],
+  );
+
+  const generateImage = useCallback(
+    async (shotId: string) => {
+      const snapshot = store.current;
+      const shot = snapshot.shots.find((s) => s.shotId === shotId);
+      const project = snapshot.project;
+      if (!shot || !project) return undefined;
+      if (!adapters.image.available) {
+        say("生图适配器未启用，无法生成关键帧。", "tool");
+        return undefined;
+      }
+      const scene = snapshot.scenes.find((s) => s.sceneId === shot.sceneId);
+      const skill = skillById(shot.skillId) ?? bestSkill(scene?.synopsis ?? "").skill;
+      const stepId = uid("step");
+      const seed = 20260000 + snapshot.shots.indexOf(shot);
+      dispatch({
+        type: "add_step",
+        step: {
+          stepId,
+          runId: uid("run"),
+          shotId,
+          kind: "image",
+          actor: adapters.image.name,
+          state: "running",
+          startedAt: nowIso(),
+          summary: `生成关键帧（${adapters.image.name}）`,
+          artifactIds: [],
+        },
+      });
+      emit({
+        projectId: project.projectId,
+        stepId,
+        type: "step.queued",
+        summary: "关键帧生图入队",
+        actor: "orchestrator",
+      });
+      try {
+        const promptSpec = scene
+          ? await refinePrompt(adapters.text, shot, scene, skill)
+          : {
+              shotId,
+              positive: shot.prompt,
+              negative: shot.negativePrompt,
+              variants: [shot.prompt],
+            };
+        const referenceImages = collectBoundReferences(snapshot, shot);
+        const production = snapshot.production;
+        const imageSize = production
+          ? resolutionFor(production.aspectRatio, production.width, production.height)
+          : null;
+        const media = await adapters.image.generate({
+          shot: shot.spec,
+          prompt: promptSpec.positive,
+          negativePrompt: promptSpec.negative,
+          width: imageSize?.width ?? config.image.width,
+          height: imageSize?.height ?? config.image.height,
+          seed,
+          skillId: shot.skillId,
+          referenceImages,
+        });
+        const asset = makeAsset(media, project.projectId, "generated", {
+          shotId,
+          kind: "keyframe",
+        });
+        dispatch({ type: "add_asset", asset });
+        const binding: AssetBinding = {
+          bindingId: uid("bind"),
+          shotId,
+          role: "first_frame",
+          assetId: asset.assetId,
+          assetVersion: 1,
+        };
+        dispatch({ type: "add_binding", shotId, binding });
+        dispatch({ type: "bump", key: "imageGenerations" });
+        dispatch({
+          type: "patch_step",
+          stepId,
+          patch: {
+            state: "done",
+            endedAt: nowIso(),
+            summary: "关键帧已生成",
+            artifactIds: [asset.assetId],
+          },
+        });
+        dispatch({ type: "set_run_phase", shotId, phase: "ASSET_READY" });
+        emit({
+          projectId: project.projectId,
+          stepId,
+          type: "artifact.created",
+          summary: `关键帧 ${asset.storageKey}`,
+          actor: adapters.image.name,
+          artifactIds: [asset.assetId],
+        });
+        say(`镜头「${shot.title}」关键帧已生成（${adapters.image.name}）。`, "agent");
+        return asset;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        dispatch({
+          type: "patch_step",
+          stepId,
+          patch: { state: "failed", endedAt: nowIso(), summary: message },
+        });
+        emit({
+          projectId: project.projectId,
+          stepId,
+          type: "run.failed",
+          summary: `关键帧生成失败：${message}`,
+          actor: adapters.image.name,
+        });
+        say(`关键帧生成失败：${message}`, "agent");
+        return undefined;
+      }
+    },
+    [adapters, emit, say],
+  );
+
+  // -------------------------------------------------------------------------
   // 2. Production: image (optional) -> video -> QC -> repair
   // -------------------------------------------------------------------------
   const waitForRender = useCallback(
@@ -233,6 +489,17 @@ export function useAgentFlow(): AgentFlow {
       const scene = snapshot.scenes.find((s) => s.sceneId === shot.sceneId);
       const skill = skillById(shot.skillId) ?? bestSkill(scene?.synopsis ?? "").skill;
 
+      // One-click production parameters override the skill/config defaults.
+      const production = snapshot.production;
+      const size = resolutionFor(
+        production?.aspectRatio ?? shot.spec.aspectRatio,
+        production?.width,
+        production?.height,
+      );
+      const genSteps = production?.steps ?? skill.params.steps;
+      const genSampler = production?.sampler ?? skill.params.sampler;
+      const genFrames = production?.frames ?? config.video.length;
+
       const runId = uid("run");
       const run: Run = {
         runId,
@@ -241,8 +508,8 @@ export function useAgentFlow(): AgentFlow {
         attemptId: uid("att"),
         commandId: uid("cmd"),
         state: "PROMPT_READY",
-        seed: 20260000 + snapshot.shots.indexOf(shot),
-        params: { steps: skill.params.steps, sampler: skill.params.sampler },
+        seed: (production?.seed ?? 20260000) + snapshot.shots.indexOf(shot),
+        params: { steps: genSteps, sampler: genSampler },
         artifactIds: [],
         createdAt: nowIso(),
       };
@@ -273,14 +540,37 @@ export function useAgentFlow(): AgentFlow {
         let promptSpec: PromptSpec = await refinePrompt(adapters.text, shot, scene!, skill);
         say(`镜头「${shot.title}」提示词已优化（${adapters.text.available ? "text-model" : "skill-template"}）。`, "agent");
 
-        // 2. image condition (placeholder until a T2I model is installed)
-        if (!adapters.image.available) {
+        // 2. reference images: prefer imported art, generate a keyframe only for gaps
+        let referenceImages = collectBoundReferences(store.current, shot);
+        const importedRefs = referenceImages.filter((r) => r.source === "imported");
+        if (importedRefs.length > 0) {
+          dispatch({ type: "bump", key: "imageReuses" });
+          say(
+            `镜头「${shot.title}」复用 ${importedRefs.length} 个导入参考素材，跳过生图。`,
+            "tool",
+          );
+          emit({
+            projectId: project.projectId,
+            runId,
+            stepId,
+            type: "agent.message",
+            summary: `复用 ${importedRefs.length} 个导入参考素材`,
+            actor: "asset-service",
+          });
+        } else if (adapters.image.available && config.image.enabled) {
+          dispatch({ type: "set_run_phase", shotId, phase: "ASSET_READY" });
+          const keyframe = await generateImage(shotId);
+          if (keyframe) {
+            const ref = assetReference(keyframe);
+            if (ref) referenceImages = [...referenceImages, { ...ref, role: "first_frame" }];
+          }
+        } else {
           emit({
             projectId: project.projectId,
             runId,
             stepId,
             type: "tool.progress",
-            summary: "生图适配器未启用（本机无文生图模型），跳过图像条件",
+            summary: "生图适配器未启用，跳过图像条件",
             actor: "image-adapter",
           });
         }
@@ -293,14 +583,15 @@ export function useAgentFlow(): AgentFlow {
           const req: RenderRequest = {
             shotId,
             promptSpec,
-            width: config.video.width,
-            height: config.video.height,
-            length: config.video.length,
+            width: size.width,
+            height: size.height,
+            length: genFrames,
             seed: run.seed! + attempt,
-            steps: skill.params.steps,
-            sampler: skill.params.sampler,
-            refAssetIds: [],
-            workflowHash: `wf:${shortHash(JSON.stringify(skill.params))}`,
+            steps: genSteps,
+            sampler: genSampler,
+            refAssetIds: referenceImages.map((r) => r.assetId),
+            referenceImages,
+            workflowHash: `wf:${shortHash(`${skill.skillId}:${genSteps}:${genSampler}`)}`,
           };
           const handle = await adapters.video.render(req);
           dispatch({ type: "patch_run", runId, patch: { promptId: handle.promptId } });
@@ -382,7 +673,7 @@ export function useAgentFlow(): AgentFlow {
         say(`镜头「${shot.title}」执行失败：${message}`, "agent");
       }
     },
-    [adapters, emit, say, waitForRender],
+    [adapters, emit, generateImage, say, waitForRender],
   );
 
   const generateAll = useCallback(async () => {
@@ -413,48 +704,88 @@ export function useAgentFlow(): AgentFlow {
     [say],
   );
 
-  const compose = useCallback(async () => {
-    const snapshot = store.current;
-    const project = snapshot.project;
-    if (!project) return;
-    const accepted = snapshot.shots.filter((s) => s.phase === "ACCEPTED");
-    if (accepted.length !== snapshot.shots.length) {
-      say(`还有 ${snapshot.shots.length - accepted.length} 个镜头未通过验收，暂不能合成交付。`, "agent");
-      return;
-    }
-    dispatch({ type: "set_phase", phase: "composing" });
-    emit({ projectId: project.projectId, type: "step.completed", summary: "开始合成成片", actor: "ffmpeg" });
-    await sleep(800);
-    const finalAsset: Asset = {
-      assetId: uid("export"),
-      projectId: project.projectId,
-      source: "derived",
-      mediaType: "video",
-      version: 1,
-      storageKey: `exports/${project.projectId}/final.mp4`,
-      previewKey: `exports/${project.projectId}/final.jpg`,
-      parentAssetIds: accepted
-        .map((s) => s.acceptedRunId)
-        .filter(Boolean)
-        .map(String),
-      metadata: {
-        shots: accepted.length,
-        aspectRatio: snapshot.brief?.aspectRatio,
-        manifest: `exports/${project.projectId}/manifest.json`,
-      },
-      state: "READY",
-    };
-    dispatch({ type: "add_asset", asset: finalAsset });
-    emit({
-      projectId: project.projectId,
-      type: "export.completed",
-      summary: `成片已合成：${finalAsset.storageKey}`,
-      actor: "ffmpeg",
-      artifactIds: [finalAsset.assetId],
-    });
-    dispatch({ type: "set_final", asset: finalAsset });
-    say(`成片合成完成：${finalAsset.storageKey}（${accepted.length} 个镜头）。`, "agent");
-  }, [emit, say]);
+  const compose = useCallback(
+    async (options?: { allowPartial?: boolean }) => {
+      const snapshot = store.current;
+      const project = snapshot.project;
+      if (!project) return;
+      const accepted = snapshot.shots.filter((s) => s.phase === "ACCEPTED");
+      const hasVideo = (shotId: string) =>
+        snapshot.assets.some(
+          (a) =>
+            a.mediaType === "video" &&
+            a.metadata.shotId === shotId &&
+            typeof a.metadata.remoteUrl === "string",
+        );
+      const included = options?.allowPartial
+        ? snapshot.shots.filter((s) => s.phase === "ACCEPTED" || hasVideo(s.shotId))
+        : accepted;
+      if (!options?.allowPartial && accepted.length !== snapshot.shots.length) {
+        say(
+          `还有 ${snapshot.shots.length - accepted.length} 个镜头未通过验收，暂不能合成交付。`,
+          "agent",
+        );
+        return;
+      }
+      if (included.length === 0) {
+        say("没有可用片段，无法合成成片。", "agent");
+        return;
+      }
+      dispatch({ type: "set_phase", phase: "composing" });
+      emit({ projectId: project.projectId, type: "step.completed", summary: "开始合成成片", actor: "ffmpeg" });
+      await sleep(800);
+      // Preview URL: newest included shot video. Real ffmpeg concat is handled
+      // by the backend when available; the last clip is a usable fallback.
+      const includedIds = new Set(included.map((s) => s.shotId));
+      const clipPreview = snapshot.assets
+        .filter(
+          (a) =>
+            a.mediaType === "video" &&
+            typeof a.metadata.remoteUrl === "string" &&
+            includedIds.has(String(a.metadata.shotId)),
+        )
+        .at(-1);
+      const finalAsset: Asset = {
+        assetId: uid("export"),
+        projectId: project.projectId,
+        source: "derived",
+        mediaType: "video",
+        version: 1,
+        storageKey: `exports/${project.projectId}/final.mp4`,
+        previewKey: `exports/${project.projectId}/final.jpg`,
+        parentAssetIds: included
+          .map((s) => s.acceptedRunId)
+          .filter(Boolean)
+          .map(String),
+        metadata: {
+          shots: included.length,
+          accepted: accepted.length,
+          partial: included.length !== snapshot.shots.length,
+          aspectRatio: snapshot.brief?.aspectRatio,
+          manifest: `exports/${project.projectId}/manifest.json`,
+          remoteUrl: clipPreview?.metadata.remoteUrl,
+          previewKind: clipPreview ? "clip" : undefined,
+        },
+        state: "READY",
+      };
+      dispatch({ type: "add_asset", asset: finalAsset });
+      emit({
+        projectId: project.projectId,
+        type: "export.completed",
+        summary: `成片已合成：${finalAsset.storageKey}`,
+        actor: "ffmpeg",
+        artifactIds: [finalAsset.assetId],
+      });
+      dispatch({ type: "set_final", asset: finalAsset });
+      say(
+        `成片合成完成：${finalAsset.storageKey}（${included.length} 个镜头${
+          included.length !== accepted.length ? `，其中 ${included.length - accepted.length} 个未验收` : ""
+        }）。`,
+        "agent",
+      );
+    },
+    [emit, say],
+  );
 
   const archive = useCallback(async () => {
     const snapshot = store.current;
@@ -473,6 +804,152 @@ export function useAgentFlow(): AgentFlow {
     say(`素材已归档：${record.manifestKey}（${record.assetIds.length} 个资产）。`, "agent");
   }, [adapters.store, emit, say]);
 
+  // -------------------------------------------------------------------------
+  // 4. One-click production: markdown + images -> finished video
+  // -------------------------------------------------------------------------
+  const produceFromMaterials = useCallback(
+    async (input: {
+      title: string;
+      mdFiles: File[];
+      images: File[];
+      params: ProductionParams;
+    }) => {
+      if (input.images.length === 0) {
+        say("请至少导入一张图片素材，再执行一键出片。", "agent");
+        return;
+      }
+      dispatch({ type: "set_busy", busy: true });
+      dispatch({ type: "set_phase", phase: "planning" });
+      const projectId = uid("proj");
+      emit({
+        projectId,
+        type: "agent.started",
+        summary: "一键出片：解析素材",
+        actor: "producer-agent",
+      });
+
+      // 1. read the markdown / text materials
+      let script = "";
+      for (const file of input.mdFiles) {
+        try {
+          script += `\n\n${await file.text()}`;
+        } catch {
+          /* ignore unreadable file */
+        }
+      }
+      say(
+        `已读取 ${input.mdFiles.length} 个文本素材、${input.images.length} 张图片，正在编排分镜…`,
+        "agent",
+      );
+
+      // 2. import images into the asset store (source = imported)
+      const assets: Asset[] = [];
+      const images: { assetId: string; name: string; dataUrl: string }[] = [];
+      for (const file of input.images) {
+        if (!file.type.startsWith("image/")) continue;
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          const assetId = uid("asset");
+          assets.push({
+            assetId,
+            projectId,
+            source: "imported",
+            mediaType: "image",
+            version: 1,
+            storageKey: `imports/${projectId}/${file.name}`,
+            metadata: {
+              name: file.name,
+              mimeType: file.type,
+              sizeBytes: file.size,
+              dataUrl,
+              remoteUrl: dataUrl,
+            },
+            state: "READY",
+          });
+          images.push({ assetId, name: file.name, dataUrl });
+        } catch {
+          /* skip bad image */
+        }
+      }
+      if (images.length === 0) {
+        say("图片素材读取失败，请检查文件格式。", "agent");
+        dispatch({ type: "set_busy", busy: false });
+        return;
+      }
+
+      // 3. build a storyboard, one shot per image, bound as first_frame
+      const plan = planFromMaterials(
+        {
+          title: input.title,
+          script,
+          imageCount: images.length,
+          params: input.params,
+        },
+        projectId,
+      );
+      const shots = plan.shots.map((shot, i) => {
+        const img = images[i % images.length];
+        const binding: AssetBinding = {
+          bindingId: uid("bind"),
+          shotId: shot.shotId,
+          role: "first_frame",
+          assetId: img.assetId,
+          assetVersion: 1,
+        };
+        return {
+          ...shot,
+          bindings: [binding],
+          spec: { ...shot.spec, referenceAssets: [img.assetId] },
+        };
+      });
+
+      dispatch({
+        type: "set_materials",
+        project: {
+          projectId,
+          name: input.title || "一键出片项目",
+          brief: plan.brief,
+          createdAt: nowIso(),
+          sceneIds: plan.scenes.map((s) => s.sceneId),
+          stateVersion: 1,
+        },
+        brief: plan.brief,
+        scenes: plan.scenes,
+        shots,
+        routings: Object.fromEntries(
+          plan.scenes.map((s) => [s.sceneId, plan.routings[s.index] ?? []]),
+        ),
+        assets,
+        production: input.params,
+      });
+      say(
+        `素材编排完成：${shots.length} 个镜头（${plan.brief.aspectRatio} · ${plan.brief.durationS}s · ${input.params.steps} 步），开始生产。`,
+        "agent",
+      );
+      emit({
+        projectId,
+        type: "step.completed",
+        summary: `素材编排完成 · ${shots.length} 镜头`,
+        actor: "producer-agent",
+      });
+      await sleep(120);
+      dispatch({ type: "set_busy", busy: false });
+
+      // 4. produce every shot, then optionally compose
+      dispatch({ type: "set_phase", phase: "producing" });
+      for (const shot of shots) {
+        await generateShot(shot.shotId);
+      }
+      if (input.params.autoCompose) {
+        await sleep(120);
+        await compose({ allowPartial: true });
+      }
+      dispatch({ type: "set_phase", phase: "planned" });
+      say("一键出片流程结束。", "agent");
+    },
+    [compose, emit, generateShot, say],
+  );
+
   const reset = useCallback(() => {
     log.clear();
     dispatch({ type: "reset" });
@@ -488,11 +965,16 @@ export function useAgentFlow(): AgentFlow {
     guide,
     editShotPrompt,
     selectSkill,
+    importAsset,
+    bindAsset,
+    unbindAsset,
+    generateImage,
     generateShot,
     generateAll,
     review,
     compose,
     archive,
+    produceFromMaterials,
     reset,
   };
 }

@@ -33,3 +33,9 @@ apps/web/dist/
 apps/console/node_modules/
 apps/console/dist/
 *.tsbuildinfo
+
+# Tiny offline demo media used by the mock adapters (UI rendering without GPU)
+!apps/console/public/mock/
+!apps/web/public/mock/
+!apps/console/public/mock/*.mp4
+!apps/web/public/mock/*.mp4
