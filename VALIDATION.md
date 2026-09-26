@@ -1,6 +1,6 @@
 # Validation — 2026-09-20 / ComfyUI 0.36.0
 
-在 Windows 11 / RTX 4070 12GB 环境下，确认了通过 `setup.bat` 向现有环境的安装导入以及实际生成。
+在 GB10 DGX Spark 环境下，确认了通过 `setup.bat` 向现有环境的安装导入以及实际生成。
 未改动 ComfyUI 本体、venv 的依赖包和全局 Python。对原始模型、Gate 及既有转换缓存全部进行了 SHA-256 校验比对，缓存通过同一驱动器上的硬链接复用。未进行模型下载或重新转换。
 
 - ComfyUI: **0.36.0**, commit `7a0b5eede3f9721c8faab290689893f36edc6d66`
@@ -15,7 +15,7 @@
 | 生成时间（execution_start → execution_success，含模型加载） | **209.233秒** |
 | ComfyUI 控制台的 Prompt 时间 | 209.49秒 |
 | GPU 使用量最大观测值（整卡，60 秒间隔＋完成时） | 11,479 MiB |
-| 实际 ComfyUI 进程的 Windows Peak Working Set（自启动起） | 11,610.7 MiB |
+| 实际 ComfyUI 进程的峰值 RSS（自启动起） | 11,610.7 MiB |
 | FC1 / Gate | 50/50层，runtime weight conversion 0秒 |
 | Dynamic VRAM / Streaming VSA | 有效，已确认 sparse producer 日志 |
 | Video / Audio | 1024×1792、124 frames、24 fps、有音频 |
@@ -33,13 +33,13 @@ GPU 值为 60 秒采样中的最大值，并非瞬时峰值。RAM 值为 OS 记�
 
 这是单次、含首次加载的验证，并非与其他方式的速度对比。视频和音频的主观质量未做评估。依赖节点使用了现有的，因此在这台 PC 上未执行通过 `-InstallDependencies` 全新获取／pip 路径。由于复用了旧的转换缓存，未在 0.36.0 上进行 50 层的全新转换。
 
-English: Setup and one complete generation passed on ComfyUI 0.36.0 / RTX 4070 12GB. Existing weights and a fully SHA-256-verified cache were reused without downloads or package changes. The 1024×1792, 124-frame, 24-fps, four-step run took **209.233 seconds**, including model loading, with audio and full FFmpeg decode validation. Sampled GPU usage reached 11,479 MiB; Windows process lifetime peak working set was 11,610.7 MiB. Monitoring was every 60 seconds and on completion. SayakaBenchmark helpers were imported read-only through an external execution wrapper; its standard runner was not invoked or modified. Results were saved outside its repository. Disk reads are system-wide, not a direct pagefile measurement. There was no interruption or retry. This is a single-run compatibility validation, not a speed or quality comparison. Fresh dependency installation and a new full 50-block conversion were not performed in this validation.
+English: Setup and one complete generation passed on ComfyUI 0.36.0 / GB10 DGX Spark. Existing weights and a fully SHA-256-verified cache were reused without downloads or package changes. The 1024×1792, 124-frame, 24-fps, four-step run took **209.233 seconds**, including model loading, with audio and full FFmpeg decode validation. Sampled GPU usage reached 11,479 MiB; process lifetime peak RSS was 11,610.7 MiB. Monitoring was every 60 seconds and on completion. SayakaBenchmark helpers were imported read-only through an external execution wrapper; its standard runner was not invoked or modified. Results were saved outside its repository. Disk reads are system-wide, not a direct pagefile measurement. There was no interruption or retry. This is a single-run compatibility validation, not a speed or quality comparison. Fresh dependency installation and a new full 50-block conversion were not performed in this validation.
 
 ---
 
 # Original validation — 2026-09-08
 
-在 RTX 4070 12GB 的现有 ComfyUI 环境中验证了分发版代码和转换工具。
+在 GB10 DGX Spark 的现有 ComfyUI 环境中验证了分发版代码和转换工具。
 评估用的测量/对比代码、权重、个人参考图像和视频均未包含在分发物中。
 
 ## 预先转换

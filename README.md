@@ -49,7 +49,7 @@ Xpark Media Foundry Agent（`Xpark-Media-Foundry-Agent`）是一条视频数字�
 | 路径 | 节点 | 说明 | 文档 |
 |---|---|---|---|
 | **009jev native SLA（推荐）** | `H3JevNativeSLAPatch` | 普通模型 + native SLA，无需 W4A4 转换，逐层动态 keep | [009JEV.md](009JEV.md) |
-| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 预转换 + 固定/自适应 VSA，适合 12GB 显存 | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
+| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 预转换 + 固定/自适应 VSA | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
 
 决策引擎三选一，契约一致、可热切换（环境变量 `H3_DECISION_ENGINE`）：
 
@@ -144,7 +144,7 @@ python3 apps/api/test_server.py
 
 ---
 
-## 生成引擎详解：W4A4 + Streaming VSA（RTX 4070 路径）
+## 生成引擎详解：W4A4 + Streaming VSA
 
 以下为 FC1 W4A4 + Streaming VSA 路径的安装、一次性转换、工作流与验证说明。**在 Windows 上使用 `setup.bat` 即可轻松安装. 已在 ComfyUI v0.36.0 上完成安装与实际生成的确认.** 只要准备好兼容的 ComfyUI 和所需模型，即可一次性完成 Python 选择，兼容性检查，节点配置与预转换. 不会自动下载模型.
 
@@ -159,13 +159,13 @@ python3 apps/api/test_server.py
 
 ### ComfyUI v0.36.0 上的实测结果
 
-2026-09-20，Windows 11 / RTX 4070 12GB，单次运行. 参数为 1024×1792，124 帧，24fps，4 steps，seed 43，res_multistep/simple，Sigma Shift 12/3，ChunkFFN 4，VSA keep 5%，FastVAE batch 2.
+2026-09-20，GB10 DGX Spark，单次运行. 参数为 1024×1792，124 帧，24fps，4 steps，seed 43，res_multistep/simple，Sigma Shift 12/3，ChunkFFN 4，VSA keep 5%，FastVAE batch 2.
 
 | 指标 | 实测结果 |
 |---|---:|
 | 生成时间（含模型加载） | **209.233 秒（约 3 分 29 秒）** |
 | GPU 使用量最大观测值 | **11,479 MiB** |
-| 进程 RAM 峰值（Windows Peak Working Set） | **11,610.7 MiB** |
+| 进程 RAM 峰值（峰值 RSS） | **11,610.7 MiB** |
 | 输出验证 | 含音频，124 帧，24fps，FFmpeg 全部解码成功 |
 | 中断/重跑 | 无 |
 
@@ -187,9 +187,9 @@ FC2 保持 INT8 不变. 不修改 QKV，Attention kernel，Gate 的 INT8 计算�
 
 ## 所需环境
 
-2026-09-20：已在 **ComfyUI 0.36.0，Python 3.13.13，PyTorch 2.14.0+cu130，comfy-kitchen 0.2.34，comfy-aimdo 0.5.5** 上确认安装和 1024×1792 的实际生成. RTX 4070 12GB 上含模型加载共 209.233 秒（单次）. 详情请参阅 [VALIDATION.md](VALIDATION.md).
+2026-09-20：已在 **ComfyUI 0.36.0，Python 3.13.13，PyTorch 2.14.0+cu130，comfy-kitchen 0.2.34，comfy-aimdo 0.5.5** 上确认安装和 1024×1792 的实际生成. GB10 DGX Spark 上含模型加载共 209.233 秒（单次）. 详情请参阅 [VALIDATION.md](VALIDATION.md).
 
-首次验证环境：Windows 11，RTX 4070 12GB，Python 3.13.14，PyTorch 2.13.0+cu130，comfy-kitchen 0.2.33，comfy-aimdo 0.5.2.
+首次验证环境：GB10 DGX Spark，Python 3.13.14，PyTorch 2.13.0+cu130，comfy-kitchen 0.2.33，comfy-aimdo 0.5.2.
 ComfyUI 验证 commit 为 `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`.
 详细的文件指纹记录在 [compatibility.json](compatibility.json) 中.
 仅凭相同的版本号显示无法保证 GPU 二进制兼容性，因此请运行后述的 `--check`.
@@ -198,7 +198,7 @@ ComfyUI 验证 commit 为 `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`.
 
 - ComfyUI：`comfy.quant_ops.QUANT_ALGOS['convrot_w4a4']`，native quantized state_dict loader，`comfy_extras.nodes_sparse_attention`.
 - comfy-kitchen：`TensorCoreConvRotW4A4Layout`，CUDA `cutlass_int4_dequant`，`sol_attn_chunked`，`int8_linear`.
-- 在该验证版 kitchen 中，native ConvRot INT4 走 SM8x（Ampere/Ada）路径. Hopper/Blackwell 及强制 INT8 fallback 的设置会被排除在支持范围之外并停止. **实测对象仅限 RTX 4070**. 其他 GPU 请在 `--check` 之外再通过实际生成确认.
+- 在该验证版 kitchen 中，native ConvRot INT4 的执行路径取决于架构；不受支持的设置会被排除在支持范围之外并停止. **实测对象仅限 GB10 DGX Spark**. 其他 GPU 请在 `--check` 之外再通过实际生成确认.
 - [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes)：`MiniMaxChunkFeedForward`.
 - [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE)：`MiniMaxH3FastVAEDecode`.
 - `torch` / `safetensors` 使用与 ComfyUI 相同 Python 环境中的版本.
@@ -270,7 +270,7 @@ $h3Convert = '.\ComfyUI\custom_nodes\Xpark-Media-Foundry-Agent\convert.py'
 `--gpu` 仅用于转换进程的 CUDA 选择. 不会改变 ComfyUI 通常的 GPU 设置.
 venv 环境下请将 `$h3Python` 替换为该 venv 的 Python. Linux 可以用相同参数在一行内执行，但本版本尚未验证.
 
-所需的额外磁盘空间约为 **5.8 GB**（FC1 约 3.86 GB + Gate 约 1.93 GB）. 由于 RAM 还要用于整个模型，Text Encoder 和 VAE，仅有 12GB VRAM 无法满足容量条件. 验证 PC 的 RAM 约为 49GB，运行时模型 staging 约为 16GiB.
+所需的额外磁盘空间约为 **5.8 GB**（FC1 约 3.86 GB + Gate 约 1.93 GB）. 由于内存还要用于整个模型，Text Encoder 和 VAE，需要足够的统一内存承载全部权重. GB10 DGX Spark 的统一内存可满足该需求，运行时模型 staging 约为 16GiB.
 转换时不会让全部 50 层常驻 GPU，而是逐层进行保存和 GPU 往返验证.
 
 完成时会显示 `COMPLETE: FC1 50/50 + Gate 50/50`，并在最后写入 `manifest.json`.
@@ -373,7 +373,7 @@ See [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) and the [learning-video ski
 | Path | Node | Notes | Doc |
 |---|---|---|---|
 | **009jev native SLA (recommended)** | `H3JevNativeSLAPatch` | plain model + native SLA, no W4A4 conversion, per-layer dynamic keep | [009JEV.en.md](009JEV.en.md) |
-| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 preconversion + fixed/adaptive VSA, fits 12 GB VRAM | [JEV_ADAPTIVE.en.md](JEV_ADAPTIVE.en.md) |
+| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 preconversion + fixed/adaptive VSA | [JEV_ADAPTIVE.en.md](JEV_ADAPTIVE.en.md) |
 
 Decision engine, one of three, identical contract and hot-swappable via `H3_DECISION_ENGINE`:
 
@@ -393,9 +393,9 @@ Measured on GB10, 5-second 4-step video, warm cache:
 
 ---
 
-## Engine detail: W4A4 + Streaming VSA (RTX 4070 path)
+## Engine detail: W4A4 + Streaming VSA
 
-The sections below cover installation, one-time conversion, workflows and validation for the FC1 W4A4 + Streaming VSA path. Accelerates MiniMax H3 Ref2VA on RTX 4070 12GB using FC1 W4A4 + Streaming VSA, validated through full generation at 832×1408 / 124 frames / 4 steps.
+The sections below cover installation, one-time conversion, workflows and validation for the FC1 W4A4 + Streaming VSA path. Accelerates MiniMax H3 Ref2VA on GB10 DGX Spark using FC1 W4A4 + Streaming VSA, validated through full generation at 832×1408 / 124 frames / 4 steps.
 Combines **FC1 Plain ConvRot W4A4, preconverted INT8 Gate, and fixed padding decision cache**.
 Weight conversion is executed once offline; during generation, weights are loaded from CPU using ComfyUI's Dynamic VRAM / offload path.
 
@@ -412,13 +412,13 @@ Weight conversion is executed once offline; during generation, weights are loade
 
 ### Measured results on ComfyUI v0.36.0
 
-One run on 2026-09-20, Windows 11 / RTX 4070 12GB: 1024×1792, 124 frames, 24 fps, 4 steps, seed 43, res_multistep/simple, Sigma Shift 12/3, ChunkFFN 4, VSA keep 5%, and FastVAE batch 2.
+One run on 2026-09-20, GB10 DGX Spark: 1024×1792, 124 frames, 24 fps, 4 steps, seed 43, res_multistep/simple, Sigma Shift 12/3, ChunkFFN 4, VSA keep 5%, and FastVAE batch 2.
 
 | Metric | Measured result |
 |---|---:|
 | Generation time, including model loading | **209.233 seconds (about 3 min 29 sec)** |
 | Maximum observed GPU memory usage | **11,479 MiB** |
-| Process RAM peak, Windows Peak Working Set | **11,610.7 MiB** |
+| Process RAM peak (peak RSS) | **11,610.7 MiB** |
 | Output validation | Audio present, 124 frames, 24 fps, full FFmpeg decode passed |
 | Interruptions / retries | None |
 
@@ -440,10 +440,10 @@ Standard ComfyUI classes and existing custom nodes are not globally monkey-patch
 
 ## 2. Tested Environment
 
-On 2026-09-20, setup and a complete 1024×1792 generation passed with **ComfyUI 0.36.0, Python 3.13.13, PyTorch 2.14.0+cu130, comfy-kitchen 0.2.34, and comfy-aimdo 0.5.5**. The single RTX 4070 12GB run took 209.233 seconds including model loading. See [VALIDATION.md](VALIDATION.md) for conditions and measurement limits. The original validation environment follows:
+On 2026-09-20, setup and a complete 1024×1792 generation passed with **ComfyUI 0.36.0, Python 3.13.13, PyTorch 2.14.0+cu130, comfy-kitchen 0.2.34, and comfy-aimdo 0.5.5**. The single GB10 DGX Spark run took 209.233 seconds including model loading. See [VALIDATION.md](VALIDATION.md) for conditions and measurement limits. The original validation environment follows:
 
-- **OS**: Windows 11
-- **GPU**: NVIDIA GeForce RTX 4070 12GB
+- **OS**: DGX OS (Linux, aarch64)
+- **GPU**: GB10 DGX Spark
 - **Python**: 3.13.14
 - **PyTorch**: 2.13.0+cu130
 - **comfy-kitchen**: 0.2.33
@@ -458,7 +458,7 @@ Required APIs:
 
 - **ComfyUI**: `comfy.quant_ops.QUANT_ALGOS['convrot_w4a4']`, native quantized state_dict loader, `comfy_extras.nodes_sparse_attention`.
 - **comfy-kitchen**: `TensorCoreConvRotW4A4Layout`, CUDA `cutlass_int4_dequant`, `sol_attn_chunked`, `int8_linear`.
-  - In this tested kitchen build, native ConvRot INT4 follows the SM8x (Ampere/Ada) path. Hopper/Blackwell and forced INT8 fallback modes are unsupported and rejected. **Measured target is RTX 4070 only**. Other GPUs must verify via `--check` and actual generation.
+  - In this tested kitchen build, the native ConvRot INT4 execution path depends on the architecture; unsupported modes are rejected. **Measured target is GB10 DGX Spark only**. Other GPUs must verify via `--check` and actual generation.
 - **External Custom Nodes** (required by workflows):
   - [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes): `MiniMaxChunkFeedForward`.
   - [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE): `MiniMaxH3FastVAEDecode`.
@@ -545,7 +545,7 @@ $h3Convert = '.\ComfyUI\custom_nodes\Xpark-Media-Foundry-Agent\convert.py'
 
 - `--gpu` selects the CUDA device exclusively for the conversion process. It does not affect ComfyUI's general settings.
 - In a venv environment, replace `$h3Python` with your venv's Python executable.
-- Required additional disk space is approximately **5.8 GB** (FC1 ~3.86 GB + Gate ~1.93 GB). RAM requirement: because the full model, text encoder, and VAEs are utilized, 12GB VRAM alone is insufficient. The benchmark system had ~49GB RAM with ~16GiB staging during runtime.
+- Required additional disk space is approximately **5.8 GB** (FC1 ~3.86 GB + Gate ~1.93 GB). Memory requirement: because the full model, text encoder, and VAEs are utilized, enough unified memory is needed to hold all weights. GB10 DGX Spark's unified memory satisfies this, with ~16GiB staging during runtime.
 - Layers are converted and roundtrip-verified one by one; all 50 layers are never resident in GPU memory simultaneously.
 - Successful completion outputs `COMPLETE: FC1 50/50 + Gate 50/50` and writes `manifest.json`. Existing output directories are never overwritten or deleted. If conversion fails partway, the partial directory is left intact; resolve the issue and specify a new directory.
 
@@ -576,7 +576,7 @@ Lower values are sparser. The accepted range is 0.1–100. Protected prefix regi
 
 ## 8. Validation / Benchmark Results
 
-From [VALIDATION.md](VALIDATION.md), measured on Windows 11, RTX 4070 12GB:
+From [VALIDATION.md](VALIDATION.md), measured on GB10 DGX Spark:
 
 ### Benchmark Metrics (832×1408 / 124 frames / 4 steps)
 

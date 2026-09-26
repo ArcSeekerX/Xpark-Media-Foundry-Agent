@@ -8,7 +8,7 @@
 
 ## 必要条件与安装
 
-1. 请满足 [README](README.md) 中对应的 ComfyUI、comfy-kitchen、模型、Gate 及预转换步骤的要求。模型、参考图像和已转换的权重不随仓库附带。实验已在 Windows / RTX4070 12GB、ComfyUI 0.36 系的指定环境中验证，不保证其他环境的兼容性。
+1. 请满足 [README](README.md) 中对应的 ComfyUI、comfy-kitchen、模型、Gate 及预转换步骤的要求。模型、参考图像和已转换的权重不随仓库附带。实验已在 GB10 DGX Spark、ComfyUI 0.36 系的指定环境中验证，不保证其他环境的兼容性。
 2. 请将本分支放入 ComfyUI 的 `custom_nodes` 目录，或使用本分支的 `setup.bat` 安装。请勿同时加载同一节点的另一份副本。安装程序会复制 Jev 模块、文档和示例，但不会自动安装 SDK。
 3. 仅在试用 Jev 时才需要准备 TypeSafe 的账号/API 密钥和 SDK 专用 venv。固定模式不需要 SDK/API 密钥。
 

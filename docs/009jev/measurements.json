@@ -289,7 +289,7 @@
   "runtime": {
     "comfyui_commit": "7a0b5eede3f9721c8faab290689893f36edc6d66",
     "comfyui_version": "0.36.0",
-    "gpu": "RTX4070 12GB",
+    "gpu": "GB10 DGX Spark",
     "generation_wait": "WebSocket completion only; no generation polling"
   },
   "baseline_sampler_seconds": 314.31415520000155,

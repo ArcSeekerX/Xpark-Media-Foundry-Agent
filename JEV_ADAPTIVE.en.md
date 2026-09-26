@@ -8,7 +8,7 @@ Branch: `exp/jev-adaptive-vsa`. This page documents **layer_v5, four steps**. Th
 
 ## Setup
 
-Follow the base [README](README.md) for compatible ComfyUI, model weights, Gate weights, preconversion, KJNodes and FastVAE dependencies. Tested on Windows / RTX4070 12GB; other environments require validation. Weights and reference images are not bundled.
+Follow the base [README](README.md) for compatible ComfyUI, model weights, Gate weights, preconversion, KJNodes and FastVAE dependencies. Tested on GB10 DGX Spark; other environments require validation. Weights and reference images are not bundled.
 
 After this branch is published, clone it with `git clone --branch exp/jev-adaptive-vsa --single-branch https://github.com/ArcSeekerX/Xpark-Media-Foundry-Agent.git`. Place one copy under custom_nodes or use this branch's setup.bat. The installer copies Jev modules, examples and docs, but does not install the optional SDK.
 

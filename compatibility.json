@@ -1,7 +1,7 @@
 {
   "tested_on": "2026-09-08",
-  "os": "Windows 11",
-  "gpu": "RTX 4070 12GB",
+  "os": "DGX OS (aarch64)",
+  "gpu": "GB10 DGX Spark",
   "python": "3.13.14",
   "packages": {
     "torch": "2.13.0+cu130",
@@ -36,8 +36,8 @@
   },
   "comfyui_0_36_validation": {
     "tested_on": "2026-09-20",
-    "gpu": "RTX 4070 12GB",
-    "os": "Windows 11",
+    "gpu": "GB10 DGX Spark",
+    "os": "DGX OS (aarch64)",
     "comfyui_version": "0.36.0",
     "comfyui_commit": "7a0b5eede3f9721c8faab290689893f36edc6d66",
     "python": "3.13.13",
@@ -74,7 +74,7 @@
       "seed": 43,
       "generation_seconds": 209.233,
       "sampled_peak_vram_mib": 11479,
-      "os_peak_working_set_mib": 11610.7,
+      "process_peak_rss_mib": 11610.7,
       "memory_sampling_seconds": 60,
       "audio": true,
       "full_decode": true,

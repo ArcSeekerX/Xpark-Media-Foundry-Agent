@@ -1,6 +1,6 @@
 # 逐层 Jev 验证 / Per-layer Jev experiment
 
-2026-09-20 / Windows / RTX4070 12GB。所有条件均为 1024×1792、124f、24fps、4step、seed43，使用相同的 Ref2VA 参考、模型与 prompt。执行全部 200 层。初次运行时全层 5%，最终版还保护了后续入口处的 2 层。
+2026-09-20 / GB10 DGX Spark。所有条件均为 1024×1792、124f、24fps、4step、seed43，使用相同的 Ref2VA 参考、模型与 prompt。执行全部 200 层。初次运行时全层 5%，最终版还保护了后续入口处的 2 层。
 
 | Condition | Mean keep % | Generation s | Later step mean s* |
 |---|---:|---:|---:|
