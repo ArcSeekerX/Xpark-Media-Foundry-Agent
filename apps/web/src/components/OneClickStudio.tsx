@@ -155,7 +155,7 @@ export function OneClickStudio() {
 
   return (
     <div className="layout" style={{ marginTop: 16 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <section className="card">
           <header>
             <h2>一键出片 · 素材</h2>
@@ -286,7 +286,7 @@ export function OneClickStudio() {
         </section>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <section className="card">
           <header>
             <h2>出片进度</h2>

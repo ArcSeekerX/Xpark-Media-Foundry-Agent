@@ -191,7 +191,7 @@ export function OneClickStudio() {
     <div className="flex-1 min-h-0 overflow-y-auto pr-1">
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4">
         {/* Inputs */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 xp-stagger">
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -343,7 +343,7 @@ export function OneClickStudio() {
         </div>
 
         {/* Output */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 xp-stagger">
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -356,7 +356,7 @@ export function OneClickStudio() {
             <CardContent className="space-y-3">
               <div className="h-2 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-[#76B900] transition-all"
+                  className="xp-progress h-full rounded-full bg-[#76B900]"
                   style={{ width: `${progress}%` }}
                 />
               </div>

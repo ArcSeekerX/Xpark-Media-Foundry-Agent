@@ -102,7 +102,7 @@ export function AgentPage() {
 
       <div className="layout">
         {/* Left: conversation + storyboard */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <section className="card">
             <header>
               <h2>1 · 一句话智能引导</h2>
@@ -160,7 +160,7 @@ export function AgentPage() {
         </div>
 
         {/* Right: production console */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <section className="card">
             <header>
               <h2>4 · 生产指标</h2>

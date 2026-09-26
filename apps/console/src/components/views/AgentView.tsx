@@ -113,7 +113,7 @@ export function AgentView() {
     <div className="flex-1 min-h-0 overflow-y-auto pr-1">
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] gap-4">
         {/* Left column */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 xp-stagger">
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -357,7 +357,7 @@ export function AgentView() {
         </div>
 
         {/* Right column */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 xp-stagger">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -663,7 +663,7 @@ export function AgentView() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border p-2">
+    <div className="xp-metric">
       <div className="text-base font-semibold">{value}</div>
       <div className="text-[11px] text-muted-foreground">{label}</div>
     </div>

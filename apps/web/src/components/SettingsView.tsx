@@ -116,7 +116,7 @@ export function SettingsView() {
         </div>
       )}
 
-      <div className="settings-grid">
+      <div className="settings-grid stagger">
         <section className="card">
           <header>
             <h2>运行模式与接口</h2>
