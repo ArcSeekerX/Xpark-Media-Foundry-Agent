@@ -39,3 +39,6 @@ apps/console/dist/
 !apps/web/public/mock/
 !apps/console/public/mock/*.mp4
 !apps/web/public/mock/*.mp4
+
+# Backend runtime data (exports/compose/manifests)
+apps/api/data/
