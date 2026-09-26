@@ -1,73 +1,17 @@
-// Runtime configuration. Defaults to "mock" so the Agent page runs with no
-// backend. Set VITE_MODE=live to exercise the real adapters.
+// Live runtime config backed by the editable settings store. Existing call
+// sites keep using `config.*`; values now reflect user settings immediately.
+import { getSettings } from "./settings";
+import type { AppSettings } from "./settings";
 
-export type RuntimeMode = "mock" | "live";
+export type { RuntimeMode, AppSettings } from "./settings";
+export type RuntimeConfig = AppSettings;
 
-const env = import.meta.env as Record<string, string | undefined>;
-
-export const config = {
-  mode: (env.VITE_MODE as RuntimeMode) ?? "mock",
-
-  // Business API (FastAPI) — used by the "live" mode backend adapter.
-  backendUrl: env.VITE_BACKEND_URL ?? "/api",
-  // Optional bearer token for the generation backend.
-  backendToken: env.VITE_API_TOKEN ?? "",
-  // Replayable event stream (SSE) from the backend.
-  sse: (env.VITE_SSE ?? "1") !== "0",
-
-  // ComfyUI. In dev, /comfy is proxied by vite.config.ts.
-  comfyUrl: env.VITE_COMFY_URL ?? "/comfy",
-
-  // Local text model (Qwen) served over an OpenAI-compatible endpoint.
-  textModel: {
-    baseUrl: env.VITE_TEXT_MODEL_URL ?? "",
-    apiKey: env.VITE_TEXT_MODEL_KEY ?? "none",
-    model: env.VITE_TEXT_MODEL_NAME ?? "qwen",
+export const config: RuntimeConfig = new Proxy({} as RuntimeConfig, {
+  get(_target, prop: string | symbol) {
+    return (getSettings() as unknown as Record<string | symbol, unknown>)[prop];
   },
-
-  // Local decision port (Laya) or remote Jev.
-  decision: {
-    engine: (env.VITE_DECISION_ENGINE as "laya" | "jev" | "mock") ?? "mock",
-    url: env.VITE_DECISION_URL ?? "",
-  },
-
-  video: {
-    width: Number(env.VITE_VIDEO_WIDTH ?? 512),
-    height: Number(env.VITE_VIDEO_HEIGHT ?? 512),
-    length: Number(env.VITE_VIDEO_LENGTH ?? 22),
-    steps: Number(env.VITE_VIDEO_STEPS ?? 4),
-    sampler: env.VITE_VIDEO_SAMPLER ?? "res_multistep",
-  },
-
-  // Text-to-image keyframe / character-reference generation (Qwen Image 2.1 7B
-  // by default) executed as a ComfyUI API workflow.
-  image: {
-    enabled: (env.VITE_IMAGE_ENABLED ?? "1") !== "0",
-    workflowUrl: env.VITE_IMAGE_WORKFLOW ?? "/workflows/qwen_image_t2i.api.json",
-    width: Number(env.VITE_IMAGE_WIDTH ?? 768),
-    height: Number(env.VITE_IMAGE_HEIGHT ?? 1024),
-    steps: Number(env.VITE_IMAGE_STEPS ?? 20),
-    sampler: env.VITE_IMAGE_SAMPLER ?? "euler",
-    cfg: Number(env.VITE_IMAGE_CFG ?? 4),
-  },
-
-  quality: {
-    acceptThreshold: Number(env.VITE_QC_ACCEPT ?? 0.85),
-    maxRepairs: Number(env.VITE_QC_MAX_REPAIRS ?? 2),
-  },
-
-  // Intelligent routing. Shadow mode records the model's proposal but keeps the
-  // deterministic rule action until it has been calibrated.
-  routing: {
-    shadow: (env.VITE_ROUTING_SHADOW ?? "1") !== "0",
-    auto: (env.VITE_ROUTING_AUTO ?? "0") !== "0",
-    minConfidence: Number(env.VITE_ROUTING_MIN_CONF ?? 0.5),
-  },
-
-  // Persist the agent flow to localStorage so a refresh does not lose the task.
-  persist: (env.VITE_PERSIST ?? "1") !== "0",
-} as const;
+});
 
 export function isLive(): boolean {
-  return config.mode === "live";
+  return getSettings().mode === "live";
 }

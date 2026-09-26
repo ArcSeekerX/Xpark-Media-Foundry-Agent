@@ -77,6 +77,7 @@ Xpark Media Foundry Agent（`Xpark-Media-Foundry-Agent`）是一条视频数字�
 | **一键出片** | 输入 `.md`/`.txt` 文本与图片素材，设定比例/帧数/步数/采样器/种子/风格/旁白等参数，一键完成 分镜 → 逐镜生成 → 质检 → 自动剪辑 并输出成片 |
 | 系统监控 | GPU/CPU/内存/磁盘/网络与推理引擎指标、图表、远程节点面板 |
 | 在线对话 | 多会话、模型选择、思考块、图片上传、流式回复、生成参数 |
+| **设置** | 运行模式、本地/外部模型接口、生图/生视频默认参数与分辨率、质检与路由、素材与成片存储路径；设置实时生效并持久化 |
 
 监控与对话接口可暂不接入：内置 mock 层（`src/mock/metrics.ts` 合成指标、`src/mock/chat.ts` 合成 SSE 回复）。接入真实监控后端时设 `VITE_MOCK=0` 与 `VITE_BACKEND_URL`。
 
@@ -134,6 +135,9 @@ python3 apps/api/test_server.py
 | `VITE_ROUTING_AUTO` | `0` | 设为 `1` 关闭影子，采用通过校验的模型动作 |
 | `VITE_ROUTING_MIN_CONF` | `0.5` | 采用模型动作的最小置信度 |
 | `VITE_PERSIST` | `1` | 设为 `0` 关闭 localStorage 流程持久化 |
+| `VITE_IMPORTS_DIR` / `VITE_GENERATED_DIR` / `VITE_EXPORTS_DIR` | `imports` / `generated` / `exports` | 素材/产物/成片目录的默认值（可在设置页修改并同步到后端） |
+
+后端存储路径环境变量：`XPARK_DATA_DIR`（默认 `apps/api/data`）、`XPARK_IMPORTS_DIR`、`XPARK_GENERATED_DIR`、`XPARK_EXPORTS_DIR`；运行时可用 `POST /api/settings` 更新，`GET /api/settings` 读取。
 
 主 Agent 流程：一句话 → 场景 / 分镜 / 技能 → **参考图导入与绑定（优先复用）→ 缺素材时生成关键帧** → 视频生成（携带参考图）→ 质检 → 修复 → 剪辑 → 归档。导入的参考图会随渲染请求上传到后端 / ComfyUI，用作文生视频的角色条件；被决策端口判定为 `prefer_imported` 时优先复用导入素材、跳过生图。
 
@@ -147,6 +151,23 @@ python3 apps/api/test_server.py
 4. 无素材时可点「载入示例素材」快速体验。
 
 参数会覆盖技能与配置默认值，贯穿关键帧生图与视频渲染（分辨率、帧数、步数、采样器、种子、风格/旁白提示词）。
+
+### 设置模块
+
+控制台新增「设置」页，统一管理运行时配置（`apps/console/src/foundry/settings.ts`，`config` 为其实时 Proxy，改动即时作用于适配器与流程）：
+
+| 分组 | 配置项 |
+|---|---|
+| 运行模式与接口 | `mock/live`、业务后端地址与 Token、ComfyUI 地址、SSE、本地持久化 |
+| 文本与决策模型 | 文本模型地址/模型名/API Key（OpenAI 兼容）、决策引擎（mock/Laya/Jev）与端口地址 |
+| 生图默认参数 | 启用开关、工作流 JSON、宽×高、步数、采样器、CFG |
+| 生视频默认参数 | 宽×高、帧数、步数、采样器 |
+| 质检与路由 | 验收阈值、最大修复次数、路由影子/自动、最小置信度 |
+| 素材与成片存储 | 导入素材目录、生成产物目录、成片导出目录（可一键同步到后端 `POST /api/settings`） |
+
+- 设置自动保存到浏览器本地（`localStorage`），并可「重置默认」。
+- 「测试连接」可分别探测业务后端、ComfyUI、文本模型与决策端口。
+- 环境变量仍是默认值来源，设置页覆盖后即时生效。
 
 ### 媒体渲染说明
 

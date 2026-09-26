@@ -57,6 +57,14 @@ JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
 JOB_COUNTER = itertools.count(1)
 
+DATA_DIR = Path(os.environ.get("XPARK_DATA_DIR", str(REPO_ROOT / "apps/api/data")))
+SETTINGS = {
+    "data_dir": str(DATA_DIR),
+    "imports_dir": os.environ.get("XPARK_IMPORTS_DIR", str(DATA_DIR / "imports")),
+    "generated_dir": os.environ.get("XPARK_GENERATED_DIR", str(DATA_DIR / "generated")),
+    "exports_dir": os.environ.get("XPARK_EXPORTS_DIR", str(DATA_DIR / "exports")),
+}
+
 CAPABILITIES = {
     "image": {
         "model": "Qwen Image 2.1 7B",
@@ -391,7 +399,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/capabilities":
                 caps = json.loads(json.dumps(CAPABILITIES))
                 caps["compose"]["available"] = bool(shutil.which("ffmpeg"))
+                caps["storage"] = SETTINGS
                 return self._send(200, caps)
+            if path == "/api/settings":
+                return self._send(200, SETTINGS)
             if path == "/api/events":
                 return self._stream_events(query)
             if path == "/api/comfy/view":
@@ -418,6 +429,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._create_job("video", self._json_body())
             if parsed.path == "/api/productions/compose":
                 return self._compose(self._json_body())
+            if parsed.path == "/api/settings":
+                return self._update_settings(self._json_body())
             return self._send(404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
             return self._send(500, {"error": str(exc)})
@@ -453,11 +466,29 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, data, ctype)
 
     def _serve_export(self, name: str):
-        target = (self.data_dir / "exports" / name).resolve()
-        exports = (self.data_dir / "exports").resolve()
+        exports = Path(SETTINGS["exports_dir"]).resolve()
+        target = (exports / name).resolve()
         if exports not in target.parents or not target.is_file():
             return self._send(404, {"error": "export not found"})
         return self._send(200, target.read_bytes(), "video/mp4")
+
+    def _update_settings(self, req: dict):
+        for key in ("imports_dir", "generated_dir", "exports_dir"):
+            value = req.get(key)
+            if isinstance(value, str) and value.strip():
+                SETTINGS[key] = value.strip()
+        for key in ("imports_dir", "generated_dir", "exports_dir"):
+            try:
+                Path(SETTINGS[key]).mkdir(parents=True, exist_ok=True)
+            except Exception:  # noqa: BLE001 - path may be remote/unwritable
+                pass
+        EVENT_BUS.publish(
+            str(req.get("project_id") or "default"),
+            "agent.message",
+            "storage settings updated",
+            payload={k: SETTINGS[k] for k in ("imports_dir", "generated_dir", "exports_dir")},
+        )
+        return self._send(200, SETTINGS)
 
     def _stream_events(self, query: dict):
         if not self._authorized(query):
@@ -566,7 +597,7 @@ class Handler(BaseHTTPRequestHandler):
             target.write_bytes(data)
             return target
         if parsed.path.startswith("/api/exports/"):
-            local = self.data_dir / "exports" / parsed.path.rsplit("/", 1)[-1]
+            local = Path(SETTINGS["exports_dir"]) / parsed.path.rsplit("/", 1)[-1]
             shutil.copy2(local, target)
             return target
         data, _ = http_bytes(str(clip))
@@ -582,7 +613,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(503, {"error": "ffmpeg_unavailable", "clips": len(clips)})
         work = self.data_dir / "compose" / uuid.uuid4().hex
         work.mkdir(parents=True, exist_ok=True)
-        exports = self.data_dir / "exports"
+        exports = Path(SETTINGS["exports_dir"])
         exports.mkdir(parents=True, exist_ok=True)
         try:
             files = [self._download_clip(c, work, i) for i, c in enumerate(clips)]

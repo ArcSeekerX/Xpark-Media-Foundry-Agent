@@ -178,6 +178,18 @@ class BackendTest(unittest.TestCase):
         finally:
             resp.close()
 
+    def test_settings_roundtrip(self):
+        settings = get_json(f"{self.api_url}/api/settings")
+        self.assertIn("exports_dir", settings)
+        caps = get_json(f"{self.api_url}/api/capabilities")
+        self.assertIn("storage", caps)
+        updated = post_json(
+            f"{self.api_url}/api/settings",
+            {"imports_dir": "/tmp/xpark-imports-test", "exports_dir": "/tmp/xpark-exports-test"},
+        )
+        self.assertEqual(updated["imports_dir"], "/tmp/xpark-imports-test")
+        self.assertEqual(updated["exports_dir"], "/tmp/xpark-exports-test")
+
     def test_compose_requires_clips(self):
         try:
             post_json(f"{self.api_url}/api/productions/compose", {"clips": []})

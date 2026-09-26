@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Clapperboard, Sparkles } from 'lucide-react'
+import { Clapperboard, Settings as SettingsIcon, Sparkles } from 'lucide-react'
 import { useMetrics } from './hooks/useMetrics'
 import { useMetricsHistory } from './hooks/useMetricsHistory'
 import { AgentView } from './components/views/AgentView'
 import { OneClickStudio } from './components/views/OneClickStudio'
+import { SettingsView } from './components/views/SettingsView'
 import { SystemView } from './components/views/SystemView'
 import { ChatView } from './components/views/ChatView'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -128,6 +129,13 @@ function App() {
                   </svg>
                   <span>在线对话</span>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="settings"
+                  className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
+                >
+                  <SettingsIcon className="size-5" />
+                  <span>设置</span>
+                </TabsTrigger>
               </TabsList>
 
               <div className="mt-auto flex flex-col items-center" title={`版本 v${APP_VERSION}`}>
@@ -164,6 +172,10 @@ function App() {
                   events={events}
                   requests={requests}
                 />
+              </TabsContent>
+
+              <TabsContent value="settings" className="flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
+                <SettingsView />
               </TabsContent>
 
               <TabsContent value="chat" className="flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">

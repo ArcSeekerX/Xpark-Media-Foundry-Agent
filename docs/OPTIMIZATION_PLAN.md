@@ -177,7 +177,8 @@ interface DiscardRecord {
 | 能力表 | ✅ | `GET /api/capabilities`（参考图上限、fps、ffmpeg）；前端校验超限参考图 |
 | ffmpeg 合成 | ✅ | `POST /api/productions/compose` + `GET /api/exports/{name}`；无 ffmpeg 时 503 降级为片段预览 |
 | 路由自动启用 / 校准 | ✅ | `VITE_ROUTING_AUTO` 关闭影子；新增“路由采纳 / 影子分歧”指标用于校准 |
-| 测试扩展 | ✅ | 后端 9 用例（含 SSE/鉴权/能力/合成降级）；前端 smoke 新增 7 条路由用例 |
+| 测试扩展 | ✅ | 后端 10 用例（含 SSE/鉴权/能力/合成降级/设置）；前端 smoke 新增 7 条路由用例 |
+| 设置模块 | ✅ | 默认模型/参数/分辨率、本地与外部模型接口、质检/路由、素材与成片存储路径；设置实时生效并持久化，后端 `GET/POST /api/settings` |
 
 待办：共享包抽取（消除 web/console 重复）、真实质检（VLM）、多机/队列/GPU 租约、i18n/无障碍。
 

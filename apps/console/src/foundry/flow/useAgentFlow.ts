@@ -7,6 +7,7 @@ import { applySkill, bestSkill } from "../skills/router";
 import { skillById } from "../skills/registry";
 import { allowedActions, routeShot } from "../routing/router";
 import { config } from "../config";
+import { useSettings } from "../settings";
 import { EventLog } from "./events";
 import { initialState, reducer } from "./store";
 import type { Metrics, State } from "./store";
@@ -210,7 +211,9 @@ export function useAgentFlow(): AgentFlow {
   const cancelRef = useRef(false);
 
   const log = useRef(new EventLog()).current;
-  const adapters = useMemo(() => createAdapters(), []);
+  const { settings } = useSettings();
+  // Adapters are rebuilt whenever settings change (endpoints, models, defaults).
+  const adapters = useMemo(() => createAdapters(), [settings]);
   const [sseStatus, setSseStatus] = useState<SseStatus>("off");
   const [capabilities, setCapabilities] = useState<Capabilities | undefined>();
 
