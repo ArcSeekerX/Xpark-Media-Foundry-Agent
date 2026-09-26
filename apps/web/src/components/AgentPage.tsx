@@ -9,8 +9,8 @@ import { QCPanel } from "./QCPanel";
 import { PromptEditor } from "./PromptEditor";
 import { ExportPanel } from "./ExportPanel";
 import { EventLogView } from "./EventLogView";
-import { MetricsBar } from "./MetricsBar";
 import { ReferenceAssets, assetUrl } from "./ReferenceAssets";
+import { DigitalAssets } from "./DigitalAssets";
 import { CandidatePanel } from "./CandidatePanel";
 import type { Asset } from "../types";
 
@@ -59,6 +59,7 @@ export function AgentPage() {
   const flow = useAgentFlow();
   const { state } = flow;
   const [activeShotId, setActiveShotId] = useState<string | undefined>();
+  const [rightTab, setRightTab] = useState<"assets" | "production" | "runtime">("assets");
 
   const activeShot = useMemo(
     () => state.shots.find((s) => s.shotId === activeShotId) ?? state.shots[0],
@@ -161,12 +162,43 @@ export function AgentPage() {
 
         {/* Right: production console */}
         <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="seg" style={{ width: "100%" }}>
+            {(
+              [
+                ["assets", "资产"],
+                ["production", "制作"],
+                ["runtime", "运行"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                className={rightTab === id ? "active" : ""}
+                style={{ flex: 1 }}
+                onClick={() => setRightTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {rightTab === "assets" && (
+            <>
           <section className="card">
             <header>
-              <h2>4 · 生产指标</h2>
+              <h2>4 · 数字资产</h2>
             </header>
             <div className="body">
-              <MetricsBar metrics={state.metrics} />
+              <DigitalAssets
+                assets={state.assets}
+                shots={state.shots}
+                runs={state.runs}
+                busy={state.busy}
+                onAccept={(shotId, assetId) => flow.acceptCandidate(shotId, assetId)}
+                onDiscard={(assetId, reason, note) => flow.discardCandidate(assetId, reason, note)}
+                onRestore={(assetId) => flow.restoreCandidate(assetId)}
+                onRegenerate={(shotId) => void flow.regenerateShot(shotId)}
+                onSelectShot={setActiveShotId}
+              />
             </div>
           </section>
 
@@ -210,7 +242,11 @@ export function AgentPage() {
               </div>
             </section>
           )}
+            </>
+          )}
 
+          {rightTab === "production" && (
+            <>
           <section className="card">
             <header>
               <h2>7 · 提示词与镜头规格</h2>
@@ -244,7 +280,11 @@ export function AgentPage() {
               />
             </div>
           </section>
+            </>
+          )}
 
+          {rightTab === "runtime" && (
+            <>
           <section className="card">
             <header>
               <h2>10 · 步骤时间线</h2>
@@ -264,6 +304,8 @@ export function AgentPage() {
               <EventLogView events={state.events} />
             </div>
           </section>
+            </>
+          )}
         </div>
       </div>
     </div>

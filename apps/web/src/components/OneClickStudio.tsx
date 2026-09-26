@@ -112,6 +112,19 @@ export function OneClickStudio() {
   const total = state.shots.length;
   const running = state.busy;
   const progress = total > 0 ? Math.round((accepted / total) * 100) : 0;
+  const stageIndex =
+    state.finalAsset || state.phase === "composing"
+      ? 4
+      : state.shots.length > 0
+        ? running
+          ? accepted > 0
+            ? 3
+            : 2
+          : accepted === total
+            ? 3
+            : 1
+        : 0;
+  const latestEvent = state.events.at(-1)?.summary ?? "";
 
   const shotPreviews = useMemo(
     () =>
@@ -121,13 +134,26 @@ export function OneClickStudio() {
         const asset = id ? state.assets.find((a) => a.assetId === id) : undefined;
         const refId = shot.bindings[0]?.assetId;
         const ref = refId ? state.assets.find((a) => a.assetId === refId) : undefined;
+        const step = [...state.steps]
+          .reverse()
+          .find((st) => st.shotId === shot.shotId && st.state === "running");
+        const done = shot.phase === "ACCEPTED";
+        const ratio = step?.progress
+          ? Math.min(1, step.progress.current / step.progress.total)
+          : done
+            ? 1
+            : shot.phase === "PLANNED"
+              ? 0
+              : 0.12;
         return {
           shot,
           url: assetUrl(asset) ?? assetUrl(ref),
           mediaType: asset?.mediaType ?? ref?.mediaType,
+          ratio,
+          running: Boolean(step),
         };
       }),
-    [state.shots, state.runs, state.assets],
+    [state.shots, state.runs, state.assets, state.steps],
   );
 
   const finalUrl =
@@ -199,84 +225,86 @@ export function OneClickStudio() {
           <header>
             <h2>出片参数</h2>
           </header>
-          <div className="body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div>
-              <label className="field">画面比例</label>
-              <div className="row">
-                {ASPECTS.map((a) => (
-                  <button
-                    key={a}
-                    className={`btn small ${params.aspectRatio === a ? "primary" : ""}`}
-                    onClick={() => set("aspectRatio", a)}
-                  >
-                    {a}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="param-grid">
-              <Field label="片段帧数">
-                <input
-                  type="number"
-                  value={params.frames}
-                  min={1}
-                  onChange={(e) => set("frames", Number(e.target.value) || 1)}
-                />
-              </Field>
-              <Field label="采样步数">
-                <input
-                  type="number"
-                  value={params.steps}
-                  min={1}
-                  onChange={(e) => set("steps", Number(e.target.value) || 1)}
-                />
-              </Field>
-              <Field label="采样器">
-                <select value={params.sampler} onChange={(e) => set("sampler", e.target.value)}>
-                  {SAMPLERS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
+          <div className="body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Collapsible title="基础参数" defaultOpen>
+              <div>
+                <label className="field">画面比例</label>
+                <div className="row">
+                  {ASPECTS.map((a) => (
+                    <button
+                      key={a}
+                      className={`btn small ${params.aspectRatio === a ? "primary" : ""}`}
+                      onClick={() => set("aspectRatio", a)}
+                    >
+                      {a}
+                    </button>
                   ))}
-                </select>
-              </Field>
-              <Field label="随机种子">
-                <input
-                  type="number"
-                  value={params.seed}
-                  onChange={(e) => set("seed", Number(e.target.value) || 0)}
-                />
-              </Field>
-              <Field label="最多镜头">
-                <input
-                  type="number"
-                  value={params.maxShots}
-                  min={1}
-                  max={24}
-                  onChange={(e) => set("maxShots", Number(e.target.value) || 1)}
-                />
-              </Field>
-            </div>
-            <Field label="风格描述">
-              <textarea
-                value={params.style}
-                onChange={(e) => set("style", e.target.value)}
-                style={{ minHeight: 52 }}
-              />
-            </Field>
-            <div className="row" style={{ gap: 18 }}>
-              <Toggle label="生成旁白" checked={params.narrate} onChange={(v) => set("narrate", v)} />
+                </div>
+              </div>
+              <div className="param-grid">
+                <Field label="片段帧数">
+                  <input
+                    type="number"
+                    value={params.frames}
+                    min={1}
+                    onChange={(e) => set("frames", Number(e.target.value) || 1)}
+                  />
+                </Field>
+                <Field label="最多镜头">
+                  <input
+                    type="number"
+                    value={params.maxShots}
+                    min={1}
+                    max={24}
+                    onChange={(e) => set("maxShots", Number(e.target.value) || 1)}
+                  />
+                </Field>
+              </div>
               <Toggle
                 label="自动剪辑成片"
                 checked={params.autoCompose}
                 onChange={(v) => set("autoCompose", v)}
               />
-            </div>
-            <button
-              className="btn primary"
-              disabled={running || images.length === 0}
-              onClick={run}
-            >
+            </Collapsible>
+
+            <Collapsible title="生成参数" defaultOpen>
+              <div className="param-grid">
+                <Field label="采样步数">
+                  <input
+                    type="number"
+                    value={params.steps}
+                    min={1}
+                    onChange={(e) => set("steps", Number(e.target.value) || 1)}
+                  />
+                </Field>
+                <Field label="采样器">
+                  <select value={params.sampler} onChange={(e) => set("sampler", e.target.value)}>
+                    {SAMPLERS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="随机种子">
+                  <input
+                    type="number"
+                    value={params.seed}
+                    onChange={(e) => set("seed", Number(e.target.value) || 0)}
+                  />
+                </Field>
+              </div>
+              <Field label="风格描述">
+                <textarea
+                  value={params.style}
+                  onChange={(e) => set("style", e.target.value)}
+                  style={{ minHeight: 52 }}
+                />
+              </Field>
+              <Toggle label="生成旁白" checked={params.narrate} onChange={(v) => set("narrate", v)} />
+            </Collapsible>
+
+            <button className="btn primary" disabled={running || images.length === 0} onClick={run}>
               {running ? "正在一键出片…" : "一键出片"}
             </button>
             {images.length === 0 && (
@@ -287,6 +315,24 @@ export function OneClickStudio() {
       </div>
 
       <div className="stagger" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <section className="card">
+          <header>
+            <h2>阶段进度</h2>
+            <span className="spacer" style={{ marginLeft: "auto" }} />
+            <span className={`badge ${running ? "green" : ""}`}>
+              {running ? "执行中" : state.finalAsset ? "已完成" : "待开始"}
+            </span>
+          </header>
+          <div className="body">
+            <StageProgress
+              stageIndex={stageIndex}
+              progress={progress}
+              running={running}
+              message={latestEvent}
+            />
+          </div>
+        </section>
+
         <section className="card">
           <header>
             <h2>出片进度</h2>
@@ -343,7 +389,7 @@ export function OneClickStudio() {
                 还没有镜头。导入素材并点击「一键出片」后，这里会显示每个镜头的生成状态。
               </p>
             )}
-            {shotPreviews.map(({ shot, url, mediaType }, i) => (
+            {shotPreviews.map(({ shot, url, mediaType, ratio, running: shotRunning }, i) => (
               <div key={shot.shotId} className="studio-shot">
                 <span className="studio-index">{i + 1}</span>
                 <span className="studio-thumb">
@@ -354,8 +400,17 @@ export function OneClickStudio() {
                   ) : null}
                 </span>
                 <span className="studio-info">
-                  <b>{shot.title}</b>
+                  <b>
+                    {shot.title}
+                    {shotRunning ? " ·" : ""}
+                  </b>
                   <span className="muted">{shot.spec.action}</span>
+                  <span className="shot-progress">
+                    <i
+                      className={shotRunning ? "running" : ""}
+                      style={{ width: `${Math.round(ratio * 100)}%` }}
+                    />
+                  </span>
                 </span>
                 <span className={`phase ${shot.phase.toLowerCase()}`}>{shot.phase}</span>
                 {shot.phase !== "ACCEPTED" && (
@@ -390,6 +445,78 @@ export function OneClickStudio() {
             </div>
           </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function Collapsible({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={`collapsible ${open ? "open" : ""}`}>
+      <button type="button" onClick={() => setOpen((o) => !o)}>
+        {title}
+        <span className="chev">▾</span>
+      </button>
+      <div className="collapsible-body">
+        <div>
+          <div className="collapsible-inner">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const STAGES = ["素材解析", "分镜编排", "逐镜生成", "质检修复", "剪辑成片"];
+
+function StageProgress({
+  stageIndex,
+  progress,
+  running,
+  message,
+}: {
+  stageIndex: number;
+  progress: number;
+  running: boolean;
+  message: string;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="stage-row">
+        {STAGES.map((stage, i) => {
+          const done = i < stageIndex;
+          const active = i === stageIndex;
+          return (
+            <div key={stage} style={{ display: "flex", alignItems: "flex-start", flex: i < STAGES.length - 1 ? 1 : undefined }}>
+              <span className="stage">
+                <span className={`stage-dot ${done ? "done" : active ? "active" : ""}`}>
+                  {done ? "✓" : i + 1}
+                </span>
+                <span className={`stage-name ${active ? "active" : ""}`}>{stage}</span>
+              </span>
+              {i < STAGES.length - 1 && (
+                <span className="stage-link">
+                  <i style={{ width: done ? "100%" : active ? "50%" : "0%" }} />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="progressbar">
+        <i style={{ width: `${progress}%` }} />
+      </div>
+      <div className="muted" style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 16 }}>
+        {running && <span className="dot running" />}
+        {message || "等待开始…"}
       </div>
     </div>
   );

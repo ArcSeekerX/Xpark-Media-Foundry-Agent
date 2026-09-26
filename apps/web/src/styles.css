@@ -255,3 +255,49 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin: 6px 
   .card { transition: none; }
   .card:hover { transform: none; }
 }
+
+/* Digital assets module */
+.dassets { display: flex; flex-direction: column; gap: 10px; }
+.dassets-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.dassets-summary .metric b { font-variant-numeric: tabular-nums; }
+.dassets-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.seg { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.seg button { border: 0; background: transparent; border-radius: 7px; padding: 4px 9px; font-size: 11px; color: var(--muted); }
+.seg button.active { background: var(--tint); color: var(--blue); }
+.dassets-filters select { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 12px; background: #fff; }
+.dassets-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.dassets-row { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; background: #fbfdff; transition: background-color 0.2s ease; }
+.dassets-row:hover { background: #f2f7ff; }
+.dassets-main { flex: 1; min-width: 0; text-align: left; background: transparent; border: 0; display: flex; flex-direction: column; }
+.dassets-main b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dassets-main .muted { font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dassets-actions { display: flex; gap: 4px; flex-shrink: 0; }
+@media (max-width: 900px) { .dassets-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Collapsible parameter groups + stage progress (one-click studio) */
+@keyframes w-pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+.collapsible { border: 1px solid var(--line); border-radius: 10px; background: #fafbfe; }
+.collapsible > button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 8px 12px; background: transparent; border: 0; text-align: left; font-size: 12px; font-weight: 600; color: var(--ink); }
+.collapsible .chev { margin-left: auto; transition: transform 0.3s ease; color: var(--muted); font-size: 12px; }
+.collapsible.open .chev { transform: rotate(180deg); }
+.collapsible-body { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.3s ease, opacity 0.3s ease; }
+.collapsible.open .collapsible-body { grid-template-rows: 1fr; opacity: 1; }
+.collapsible-body > div { overflow: hidden; }
+.collapsible-inner { display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 12px; }
+.stage-row { display: flex; align-items: flex-start; }
+.stage { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.stage-dot { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; font-size: 10px; color: var(--muted); transition: all 0.3s ease; }
+.stage-dot.done { background: var(--green); border-color: var(--green); color: #fff; }
+.stage-dot.active { border-color: var(--green); color: var(--green); animation: w-pulse 1.5s ease-in-out infinite; }
+.stage-name { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.stage-name.active { color: var(--ink); }
+.stage-link { flex: 1; height: 2px; background: #e6edf6; margin: 11px 4px 0; border-radius: 2px; overflow: hidden; }
+.stage-link > i { display: block; height: 100%; background: var(--green); transition: width 0.5s ease; }
+.shot-progress { height: 4px; background: #e6edf6; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.shot-progress > i { display: block; height: 100%; background: var(--green); transition: width 0.5s ease; }
+.shot-progress > i.running {
+  background-image: linear-gradient(115deg, rgba(255,255,255,.35) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.35) 50%, rgba(255,255,255,.35) 75%, transparent 75%);
+  background-size: 24px 24px;
+  animation: w-stripes 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .stage-dot.active, .shot-progress > i.running { animation: none !important; } }

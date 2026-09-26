@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  Activity,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Download,
   FileText,
   Film,
@@ -9,6 +12,7 @@ import {
   Loader2,
   Play,
   Settings2,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Wand2,
@@ -148,6 +152,19 @@ export function OneClickStudio() {
   const total = state.shots.length
   const running = state.busy
   const progress = total > 0 ? Math.round((accepted / total) * 100) : 0
+  const stageIndex =
+    state.finalAsset || state.phase === 'composing'
+      ? 4
+      : state.shots.length > 0
+        ? running
+          ? accepted > 0
+            ? 3
+            : 2
+          : accepted === total
+            ? 3
+            : 1
+        : 0
+  const latestEvent = state.events.at(-1)?.summary ?? ''
 
   const shotPreviews = useMemo(() => {
     return state.shots.map((shot) => {
@@ -156,13 +173,26 @@ export function OneClickStudio() {
       const asset = id ? state.assets.find((a) => a.assetId === id) : undefined
       const refId = shot.bindings[0]?.assetId
       const ref = refId ? state.assets.find((a) => a.assetId === refId) : undefined
+      const step = [...state.steps]
+        .reverse()
+        .find((st) => st.shotId === shot.shotId && st.state === 'running')
+      const done = shot.phase === 'ACCEPTED'
+      const ratio = step?.progress
+        ? Math.min(1, step.progress.current / step.progress.total)
+        : done
+          ? 1
+          : shot.phase === 'PLANNED'
+            ? 0
+            : 0.12
       return {
         shot,
         url: assetUrl(asset) ?? assetUrl(ref),
         mediaType: asset?.mediaType ?? ref?.mediaType,
+        ratio,
+        running: Boolean(step),
       }
     })
-  }, [state.shots, state.runs, state.assets])
+  }, [state.shots, state.runs, state.assets, state.steps])
 
   const finalUrl =
     typeof state.finalAsset?.metadata.remoteUrl === 'string'
@@ -235,99 +265,97 @@ export function OneClickStudio() {
                 <Settings2 size={16} className="text-[#76B900]" /> 出片参数
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <div className="mb-1.5 text-[11px] text-muted-foreground">画面比例</div>
-                <div className="flex gap-2">
-                  {ASPECTS.map((a) => (
-                    <button
-                      key={a}
-                      onClick={() => set('aspectRatio', a)}
-                      className={
-                        'rounded-lg border px-3 py-1.5 text-xs transition-colors ' +
-                        (params.aspectRatio === a
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border hover:bg-muted')
-                      }
-                    >
-                      {a}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <Field label="片段帧数">
-                  <input
-                    type="number"
-                    min={1}
-                    value={params.frames}
-                    onChange={(e) => set('frames', Number(e.target.value) || 1)}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
-                  />
-                </Field>
-                <Field label="采样步数">
-                  <input
-                    type="number"
-                    min={1}
-                    value={params.steps}
-                    onChange={(e) => set('steps', Number(e.target.value) || 1)}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
-                  />
-                </Field>
-                <Field label="采样器">
-                  <select
-                    value={params.sampler}
-                    onChange={(e) => set('sampler', e.target.value)}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
-                  >
-                    {SAMPLERS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
+            <CardContent className="space-y-2">
+              <Collapsible title="基础参数" icon={<Settings2 size={13} />} defaultOpen>
+                <div>
+                  <div className="mb-1.5 text-[11px] text-muted-foreground">画面比例</div>
+                  <div className="flex gap-2">
+                    {ASPECTS.map((a) => (
+                      <button
+                        key={a}
+                        onClick={() => set('aspectRatio', a)}
+                        className={
+                          'rounded-lg border px-3 py-1.5 text-xs transition-colors ' +
+                          (params.aspectRatio === a
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border hover:bg-muted')
+                        }
+                      >
+                        {a}
+                      </button>
                     ))}
-                  </select>
-                </Field>
-                <Field label="随机种子">
-                  <input
-                    type="number"
-                    value={params.seed}
-                    onChange={(e) => set('seed', Number(e.target.value) || 0)}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
-                  />
-                </Field>
-                <Field label="最多镜头">
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={params.maxShots}
-                    onChange={(e) => set('maxShots', Number(e.target.value) || 1)}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
-                  />
-                </Field>
-              </div>
-
-              <Field label="风格描述">
-                <textarea
-                  value={params.style}
-                  onChange={(e) => set('style', e.target.value)}
-                  className="min-h-[52px] w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring"
-                />
-              </Field>
-
-              <div className="flex flex-wrap items-center gap-4 pt-1">
-                <Toggle
-                  label="生成旁白"
-                  checked={params.narrate}
-                  onChange={(v) => set('narrate', v)}
-                />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <Field label="片段帧数">
+                    <input
+                      type="number"
+                      min={1}
+                      value={params.frames}
+                      onChange={(e) => set('frames', Number(e.target.value) || 1)}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
+                    />
+                  </Field>
+                  <Field label="最多镜头">
+                    <input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={params.maxShots}
+                      onChange={(e) => set('maxShots', Number(e.target.value) || 1)}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
+                    />
+                  </Field>
+                </div>
                 <Toggle
                   label="自动剪辑成片"
                   checked={params.autoCompose}
                   onChange={(v) => set('autoCompose', v)}
                 />
-              </div>
+              </Collapsible>
+
+              <Collapsible title="生成参数" icon={<SlidersHorizontal size={13} />} defaultOpen>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <Field label="采样步数">
+                    <input
+                      type="number"
+                      min={1}
+                      value={params.steps}
+                      onChange={(e) => set('steps', Number(e.target.value) || 1)}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
+                    />
+                  </Field>
+                  <Field label="采样器">
+                    <select
+                      value={params.sampler}
+                      onChange={(e) => set('sampler', e.target.value)}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
+                    >
+                      {SAMPLERS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="随机种子">
+                    <input
+                      type="number"
+                      value={params.seed}
+                      onChange={(e) => set('seed', Number(e.target.value) || 0)}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none"
+                    />
+                  </Field>
+                </div>
+                <Field label="风格描述">
+                  <textarea
+                    value={params.style}
+                    onChange={(e) => set('style', e.target.value)}
+                    className="min-h-[52px] w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring"
+                  />
+                </Field>
+                <Toggle label="生成旁白" checked={params.narrate} onChange={(v) => set('narrate', v)} />
+              </Collapsible>
 
               <Button className="w-full" disabled={running || images.length === 0} onClick={run}>
                 {running ? <Loader2 className="animate-spin" /> : <Wand2 />}
@@ -344,6 +372,25 @@ export function OneClickStudio() {
 
         {/* Output */}
         <div className="flex flex-col gap-4 xp-stagger">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Activity size={16} className="text-[#76B900]" /> 阶段进度
+              </CardTitle>
+              <Badge variant={running ? 'default' : 'outline'} className="text-[10px]">
+                {running ? '执行中' : state.finalAsset ? '已完成' : '待开始'}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              <StageProgress
+                stageIndex={stageIndex}
+                progress={progress}
+                running={running}
+                message={latestEvent}
+              />
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
@@ -426,7 +473,7 @@ export function OneClickStudio() {
                   还没有镜头。导入素材并点击「一键出片」后，这里会显示每个镜头的生成状态。
                 </p>
               )}
-              {shotPreviews.map(({ shot, url, mediaType }, i) => (
+              {shotPreviews.map(({ shot, url, mediaType, ratio, running: shotRunning }, i) => (
                 <div
                   key={shot.shotId}
                   className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-2"
@@ -444,9 +491,23 @@ export function OneClickStudio() {
                     ) : null}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium">{shot.title}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-[13px] font-medium">{shot.title}</span>
+                      {shotRunning && (
+                        <Loader2 size={11} className="shrink-0 animate-spin text-[#76B900]" />
+                      )}
+                    </div>
                     <div className="truncate text-[11px] text-muted-foreground">
                       {shot.spec.action}
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={
+                          'h-full rounded-full bg-[#76B900] transition-all duration-500 ' +
+                          (shotRunning ? 'xp-progress' : '')
+                        }
+                        style={{ width: `${Math.round(ratio * 100)}%` }}
+                      />
                     </div>
                   </div>
                   <PhaseBadge phase={shot.phase} />
@@ -487,6 +548,120 @@ export function OneClickStudio() {
             </CardContent>
           </Card>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function Collapsible({
+  title,
+  icon,
+  defaultOpen = true,
+  children,
+}: {
+  title: string
+  icon?: ReactNode
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="rounded-lg border border-border bg-muted/10">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+      >
+        {icon}
+        <span className="text-xs font-medium">{title}</span>
+        <ChevronDown
+          size={14}
+          className={
+            'ml-auto text-muted-foreground transition-transform duration-300 ' +
+            (open ? 'rotate-180' : '')
+          }
+        />
+      </button>
+      <div
+        className={
+          'grid transition-all duration-300 ease-out ' +
+          (open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')
+        }
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-3 px-3 pb-3 pt-1">{children}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const STAGES = ['素材解析', '分镜编排', '逐镜生成', '质检修复', '剪辑成片']
+
+function StageProgress({
+  stageIndex,
+  progress,
+  running,
+  message,
+}: {
+  stageIndex: number
+  progress: number
+  running: boolean
+  message: string
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start">
+        {STAGES.map((stage, i) => {
+          const done = i < stageIndex
+          const active = i === stageIndex
+          return (
+            <div key={stage} className={'flex items-start ' + (i < STAGES.length - 1 ? 'flex-1' : '')}>
+              <div className="flex flex-col items-center gap-1">
+                <span
+                  className={
+                    'grid size-6 place-items-center rounded-full border text-[10px] transition-all duration-300 ' +
+                    (done
+                      ? 'border-[#76B900] bg-[#76B900] text-black'
+                      : active
+                        ? 'border-[#76B900] text-[#76B900] xp-live'
+                        : 'border-border text-muted-foreground')
+                  }
+                >
+                  {done ? <Check size={12} /> : i + 1}
+                </span>
+                <span
+                  className={
+                    'whitespace-nowrap text-[10px] ' +
+                    (active ? 'text-foreground' : 'text-muted-foreground')
+                  }
+                >
+                  {stage}
+                </span>
+              </div>
+              {i < STAGES.length - 1 && (
+                <div className="mx-1 mt-3 h-0.5 flex-1 overflow-hidden rounded bg-muted">
+                  <i
+                    className={
+                      'block h-full bg-[#76B900] transition-all duration-500 ' +
+                      (done ? 'w-full' : active ? 'w-1/2' : 'w-0')
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className="xp-progress h-full rounded-full bg-[#76B900]"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="flex min-h-[16px] items-center gap-2 text-[11px] text-muted-foreground">
+        {running && <Loader2 size={12} className="animate-spin text-[#76B900]" />}
+        <span className="xp-fade-in truncate">{message || '等待开始…'}</span>
       </div>
     </div>
   )

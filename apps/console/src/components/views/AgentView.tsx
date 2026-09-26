@@ -5,7 +5,6 @@ import {
   Film,
   Image as ImageIcon,
   Layers,
-  ListChecks,
   Play,
   RotateCcw,
   Sparkles,
@@ -19,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ReferenceAssets, assetUrl } from './ReferenceAssets'
 import { CandidatePanel } from './CandidatePanel'
+import { DigitalAssets } from './DigitalAssets'
 import type { Asset, Shot } from '@/foundry/types'
 
 function firstImageUrl(shot: Shot, assets: Asset[]): string | undefined {
@@ -59,6 +59,7 @@ export function AgentView() {
   const [text, setText] = useState('')
   const [activeShotId, setActiveShotId] = useState<string | undefined>()
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
+  const [rightTab, setRightTab] = useState<'assets' | 'production' | 'runtime'>('assets')
 
   useEffect(() => {
     const backend = flow.adapters.backend
@@ -358,42 +359,49 @@ export function AgentView() {
 
         {/* Right column */}
         <div className="flex flex-col gap-4 xp-stagger">
+          <div className="flex gap-1 rounded-lg border border-border bg-muted/20 p-1">
+            {(
+              [
+                ['assets', '资产'],
+                ['production', '制作'],
+                ['runtime', '运行'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setRightTab(id)}
+                className={
+                  'flex-1 rounded-md px-3 py-1.5 text-xs transition-colors ' +
+                  (rightTab === id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground')
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {rightTab === 'assets' && (
+            <>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <ListChecks size={16} className="text-[#76B900]" /> 生产指标
+                <Layers size={16} className="text-[#76B900]" /> 数字资产
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-2">
-                <Metric label="镜头验收" value={`${accepted}/${state.metrics.totalShots}`} />
-                <Metric label="渲染尝试" value={String(state.metrics.renderAttempts)} />
-                <Metric label="自动修复" value={String(state.metrics.repairCount)} />
-                <Metric label="转人审" value={String(state.metrics.humanReview)} />
-                <Metric
-                  label="首轮合格率"
-                  value={
-                    state.metrics.acceptedShots > 0
-                      ? `${Math.round((state.metrics.firstPassAccepted / state.metrics.acceptedShots) * 100)}%`
-                      : '—'
-                  }
-                />
-                <Metric label="待完成" value={String(state.metrics.totalShots - accepted)} />
-                <Metric label="导入素材" value={String(state.metrics.importedAssets)} />
-                <Metric label="生图" value={String(state.metrics.imageGenerations)} />
-                <Metric label="复用素材" value={String(state.metrics.imageReuses)} />
-                <Metric label="弃用" value={String(state.metrics.discardedAssets)} />
-                <Metric label="重生成" value={String(state.metrics.regenerations)} />
-                <Metric
-                  label="路由 复用/生成"
-                  value={`${state.metrics.routeReuses}/${state.metrics.routeGenerates}`}
-                />
-                <Metric label="路由采纳" value={String(state.metrics.routeModelAccepted)} />
-                <Metric
-                  label="影子分歧"
-                  value={String(state.metrics.routeShadowDisagreements)}
-                />
-              </div>
+              <DigitalAssets
+                assets={state.assets}
+                shots={state.shots}
+                runs={state.runs}
+                busy={state.busy}
+                onAccept={(shotId, assetId) => flow.acceptCandidate(shotId, assetId)}
+                onDiscard={(assetId, reason, note) => flow.discardCandidate(assetId, reason, note)}
+                onRestore={(assetId) => flow.restoreCandidate(assetId)}
+                onRegenerate={(shotId) => void flow.regenerateShot(shotId)}
+                onSelectShot={setActiveShotId}
+              />
             </CardContent>
           </Card>
 
@@ -441,7 +449,11 @@ export function AgentView() {
               </CardContent>
             </Card>
           )}
+            </>
+          )}
 
+          {rightTab === 'production' && (
+            <>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -586,7 +598,11 @@ export function AgentView() {
               )}
             </CardContent>
           </Card>
+            </>
+          )}
 
+          {rightTab === 'runtime' && (
+            <>
           <Card>
             <CardHeader>
               <CardTitle>步骤时间线</CardTitle>
@@ -655,6 +671,8 @@ export function AgentView() {
               </div>
             </CardContent>
           </Card>
+            </>
+          )}
         </div>
       </div>
     </div>
