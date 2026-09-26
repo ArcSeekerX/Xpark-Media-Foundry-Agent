@@ -15,7 +15,7 @@ export function createAdapters(): Adapters {
     config.textModel.apiKey,
     config.textModel.model,
   );
-  const backend = new GenerationBackend(config.backendUrl);
+  const backend = new GenerationBackend(config.backendUrl, config.backendToken);
   const store = new HttpAssetStore(config.backendUrl);
   const decision = new HttpDecisionPort(config.decision.url, config.decision.engine);
 

@@ -4,10 +4,12 @@ import {
   Clapperboard,
   Film,
   Image as ImageIcon,
+  Layers,
   ListChecks,
   Play,
   RotateCcw,
   Sparkles,
+  Square,
   Wand2,
 } from 'lucide-react'
 import { useAgentFlow } from '@/foundry/flow/useAgentFlow'
@@ -16,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ReferenceAssets, assetUrl } from './ReferenceAssets'
+import { CandidatePanel } from './CandidatePanel'
 import type { Asset, Shot } from '@/foundry/types'
 
 function firstImageUrl(shot: Shot, assets: Asset[]): string | undefined {
@@ -130,6 +133,20 @@ export function AgentView() {
                 >
                   backend {flow.adapters.backend ? (backendOk ? 'online' : 'offline') : 'n/a'}
                 </Badge>
+                <Badge
+                  variant={flow.sseStatus === 'open' ? 'default' : 'outline'}
+                  className="text-[10px]"
+                  title="后端事件流（SSE）"
+                >
+                  sse {flow.sseStatus}
+                </Badge>
+                <Badge
+                  variant={flow.capabilities?.compose?.available ? 'default' : 'outline'}
+                  className="text-[10px]"
+                  title="后端 ffmpeg 合成能力"
+                >
+                  compose {flow.capabilities?.compose?.available ? 'ready' : 'off'}
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -205,13 +222,24 @@ export function AgentView() {
               <CardTitle className="flex items-center gap-2">
                 <Clapperboard size={16} className="text-[#76B900]" /> 场景 / 分镜与技能
               </CardTitle>
-              <Button
-                size="sm"
-                disabled={state.busy || state.shots.length === 0}
-                onClick={() => void flow.generateAll()}
-              >
-                <Play /> 一键生产全部镜头
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  disabled={state.busy || state.shots.length === 0}
+                  onClick={() => void flow.generateAll()}
+                >
+                  <Play /> 一键生产全部镜头
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!state.busy}
+                  onClick={flow.cancel}
+                  title="停止后续调度，运行中的任务在安全边界停止"
+                >
+                  <Square /> 取消
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               {state.scenes.length === 0 && (
@@ -354,6 +382,17 @@ export function AgentView() {
                 <Metric label="导入素材" value={String(state.metrics.importedAssets)} />
                 <Metric label="生图" value={String(state.metrics.imageGenerations)} />
                 <Metric label="复用素材" value={String(state.metrics.imageReuses)} />
+                <Metric label="弃用" value={String(state.metrics.discardedAssets)} />
+                <Metric label="重生成" value={String(state.metrics.regenerations)} />
+                <Metric
+                  label="路由 复用/生成"
+                  value={`${state.metrics.routeReuses}/${state.metrics.routeGenerates}`}
+                />
+                <Metric label="路由采纳" value={String(state.metrics.routeModelAccepted)} />
+                <Metric
+                  label="影子分歧"
+                  value={String(state.metrics.routeShadowDisagreements)}
+                />
               </div>
             </CardContent>
           </Card>
@@ -376,6 +415,28 @@ export function AgentView() {
                   onBind={(assetId, role) => flow.bindAsset(activeShot.shotId, assetId, role)}
                   onUnbind={(bindingId) => flow.unbindAsset(activeShot.shotId, bindingId)}
                   onGenerate={() => void flow.generateImage(activeShot.shotId)}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {activeShot && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Layers size={16} className="text-[#76B900]" /> 候选与回收站
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CandidatePanel
+                  shot={activeShot}
+                  assets={state.assets}
+                  runs={state.runs}
+                  busy={state.busy}
+                  onAccept={(assetId) => flow.acceptCandidate(activeShot.shotId, assetId)}
+                  onDiscard={(assetId, reason, note) => flow.discardCandidate(assetId, reason, note)}
+                  onRestore={(assetId) => flow.restoreCandidate(assetId)}
+                  onRegenerate={(options) => void flow.regenerateShot(activeShot.shotId, options)}
                 />
               </CardContent>
             </Card>

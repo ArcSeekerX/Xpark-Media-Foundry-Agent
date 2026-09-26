@@ -11,6 +11,7 @@ import { ExportPanel } from "./ExportPanel";
 import { EventLogView } from "./EventLogView";
 import { MetricsBar } from "./MetricsBar";
 import { ReferenceAssets, assetUrl } from "./ReferenceAssets";
+import { CandidatePanel } from "./CandidatePanel";
 import type { Asset } from "../types";
 
 function Availability({ flow }: { flow: ReturnType<typeof useAgentFlow> }) {
@@ -40,6 +41,8 @@ function Availability({ flow }: { flow: ReturnType<typeof useAgentFlow> }) {
     ["decision", decision.available],
     ["store", store.available],
     ["backend", Boolean(backendOk)],
+    ["sse", flow.sseStatus === "open"],
+    ["compose", Boolean(flow.capabilities?.compose?.available)],
   ];
   return (
     <div className="chips">
@@ -131,6 +134,14 @@ export function AgentPage() {
               >
                 一键生产全部镜头
               </button>
+              <button
+                className="btn small"
+                disabled={!state.busy}
+                onClick={flow.cancel}
+                title="停止后续调度，运行中的任务在安全边界停止"
+              >
+                取消
+              </button>
             </header>
             <div className="body">
               <SceneBoard
@@ -180,9 +191,29 @@ export function AgentPage() {
             </section>
           )}
 
+          {activeShot && (
+            <section className="card">
+              <header>
+                <h2>6 · 候选与回收站</h2>
+              </header>
+              <div className="body">
+                <CandidatePanel
+                  shot={activeShot}
+                  assets={state.assets}
+                  runs={state.runs}
+                  busy={state.busy}
+                  onAccept={(assetId) => flow.acceptCandidate(activeShot.shotId, assetId)}
+                  onDiscard={(assetId, reason, note) => flow.discardCandidate(assetId, reason, note)}
+                  onRestore={(assetId) => flow.restoreCandidate(assetId)}
+                  onRegenerate={(options) => void flow.regenerateShot(activeShot.shotId, options)}
+                />
+              </div>
+            </section>
+          )}
+
           <section className="card">
             <header>
-              <h2>6 · 提示词与镜头规格</h2>
+              <h2>7 · 提示词与镜头规格</h2>
             </header>
             <div className="body">
               <PromptEditor shot={activeShot} asset={previewAsset} onSave={flow.editShotPrompt} />
@@ -191,7 +222,7 @@ export function AgentPage() {
 
           <section className="card">
             <header>
-              <h2>7 · 质检报告</h2>
+              <h2>8 · 质检报告</h2>
             </header>
             <div className="body">
               <QCPanel report={activeRun?.score} />
@@ -200,7 +231,7 @@ export function AgentPage() {
 
           <section className="card">
             <header>
-              <h2>8 · 剪辑拼接与归档</h2>
+              <h2>9 · 剪辑拼接与归档</h2>
             </header>
             <div className="body">
               <ExportPanel
@@ -216,7 +247,7 @@ export function AgentPage() {
 
           <section className="card">
             <header>
-              <h2>9 · 步骤时间线</h2>
+              <h2>10 · 步骤时间线</h2>
             </header>
             <div className="body">
               <StepTimeline
@@ -227,7 +258,7 @@ export function AgentPage() {
 
           <section className="card">
             <header>
-              <h2>10 · 事件流 (SSE)</h2>
+              <h2>11 · 事件流 (SSE)</h2>
             </header>
             <div className="body">
               <EventLogView events={state.events} />

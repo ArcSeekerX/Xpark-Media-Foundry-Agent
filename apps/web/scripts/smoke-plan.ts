@@ -2,6 +2,7 @@
 // Run: npm run smoke:plan
 import { planFromMaterials, planProject, splitScript } from "../src/agent/planner";
 import { routeSkills } from "../src/skills/router";
+import { allowedActions, routeShot } from "../src/routing/router";
 import type { ProductionParams } from "../src/types";
 
 const cases = [
@@ -62,6 +63,44 @@ console.log(
 for (const shot of materialPlan.shots) {
   console.log(`   - ${shot.title}: ${shot.spec.action}`);
 }
+
+// Intelligent routing: rule precedence + shadow mode.
+const base = {
+  materialPolicy: "prefer_imported" as const,
+  hasImportedImage: false,
+  hasGeneratedImage: false,
+  hasReuseClip: false,
+  imageAvailable: true,
+  imageEnabled: true,
+  repairs: 0,
+  maxRepairs: 2,
+  advice: null,
+};
+const routingCases: { name: string; input: typeof base; expect: string }[] = [
+  { name: "imported wins", input: { ...base, hasImportedImage: true }, expect: "reuse_imported" },
+  { name: "reuse clip wins", input: { ...base, hasReuseClip: true, hasImportedImage: true }, expect: "reuse_clip" },
+  { name: "gap -> keyframe", input: { ...base }, expect: "image_conditioned" },
+  { name: "no image -> generate", input: { ...base, imageAvailable: false }, expect: "generate" },
+  { name: "budget spent -> human", input: { ...base, priorVerdict: "repair", repairs: 2 }, expect: "human_review" },
+];
+for (const c of routingCases) {
+  const decision = routeShot(c.input, { shadow: true, minConfidence: 0.5 });
+  const ok = decision.action === c.expect;
+  if (!ok) failures += 1;
+  console.log(`${ok ? "PASS" : "FAIL"} | route ${c.name} -> ${decision.action} (expect ${c.expect})`);
+}
+const shadowDecision = routeShot(
+  { ...base, advice: { selectedAction: "generate", modelId: "mock" } },
+  { shadow: true, minConfidence: 0.5 },
+);
+const shadowOk = shadowDecision.action === "image_conditioned" && shadowDecision.modelAction === "generate";
+if (!shadowOk) failures += 1;
+console.log(
+  `${shadowOk ? "PASS" : "FAIL"} | shadow keeps rule action (rule=${shadowDecision.action} model=${shadowDecision.modelAction})`,
+);
+const allowedOk = allowedActions({ ...base, hasImportedImage: true }).includes("reuse_imported");
+if (!allowedOk) failures += 1;
+console.log(`${allowedOk ? "PASS" : "FAIL"} | allowedActions includes reuse_imported`);
 
 if (failures > 0) {
   console.error(`${failures} case(s) failed`);

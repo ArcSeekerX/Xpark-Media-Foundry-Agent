@@ -45,6 +45,28 @@ export function MetricsBar({ metrics }: { metrics: Metrics }) {
         <b>{metrics.imageReuses}</b>
         <span>复用素材</span>
       </div>
+      <div className="metric">
+        <b>{metrics.discardedAssets}</b>
+        <span>弃用</span>
+      </div>
+      <div className="metric">
+        <b>{metrics.regenerations}</b>
+        <span>重生成</span>
+      </div>
+      <div className="metric">
+        <b>
+          {metrics.routeReuses}/{metrics.routeGenerates}
+        </b>
+        <span>路由 复用/生成</span>
+      </div>
+      <div className="metric">
+        <b>{metrics.routeModelAccepted}</b>
+        <span>路由采纳</span>
+      </div>
+      <div className="metric">
+        <b>{metrics.routeShadowDisagreements}</b>
+        <span>影子分歧</span>
+      </div>
     </div>
   );
 }

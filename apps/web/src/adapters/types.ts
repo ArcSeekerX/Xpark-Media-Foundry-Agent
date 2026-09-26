@@ -109,10 +109,26 @@ export interface AssetStore {
   archive(projectId: string, assets: Asset[], extra?: unknown): Promise<ArchiveRecord>;
 }
 
+export interface Capabilities {
+  image?: { model?: string; max_reference_images?: number; inputs?: string[] };
+  video?: { model?: string; max_reference_images?: number; fps?: number; inputs?: string[] };
+  compose?: { available?: boolean; tool?: string };
+}
+
+export interface ComposeResult {
+  url: string;
+  storage_key: string;
+  size_bytes?: number;
+  clips?: number;
+}
+
 export interface BackendPort {
   name: string;
   available: boolean;
   health(): Promise<{ ok: boolean }>;
+  capabilities?(): Promise<Capabilities>;
+  compose?(clips: string[], projectId: string): Promise<ComposeResult>;
+  eventsUrl?(projectId: string, since: number): string;
 }
 
 export interface Adapters {

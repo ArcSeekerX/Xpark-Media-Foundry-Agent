@@ -3,32 +3,43 @@
 
 A dependency-free business API used by the Agent console/web front ends. It
 owns the ComfyUI templates for text-to-image keyframes and reference-to-video
-renders, uploads browser-side reference images, and exposes a small job API so
-the front end never talks to ComfyUI directly.
+renders, uploads browser-side reference images, exposes a replayable event
+stream, and can concat accepted clips with ffmpeg when available.
 
 Endpoints (all under /api):
     GET  /api/health
+    GET  /api/capabilities
+    GET  /api/events?project_id=&since=        (SSE: snapshot + cursor replay)
     GET  /api/comfy/view?filename=&subfolder=&type=
+    GET  /api/exports/{name}
     POST /api/images/jobs          {prompt, negative_prompt, width, height, seed,
-                                    steps, sampler, reference_images:[{name,data_url}]}
+                                    steps, sampler, reference_images:[{name,data_url}],
+                                    project_id}
     GET  /api/images/jobs/{id}
     POST /api/videos/jobs          {prompt, negative_prompt, width, height, length,
-                                    seed, steps, sampler, reference_images:[...]}
+                                    seed, steps, sampler, reference_images:[...], project_id}
     GET  /api/videos/jobs/{id}
+    POST /api/productions/compose  {clips:[url|{filename,subfolder,type}], project_id}
 
 Run:
     python3 apps/api/server.py --port 8080
 Environment:
     COMFY_URL (default http://127.0.0.1:8188)
     IMAGE_WORKFLOW / VIDEO_WORKFLOW (API-format JSON paths)
+    API_TOKEN (optional bearer token; also accepted as ?token= for SSE)
+    ALLOWED_ORIGINS (comma-separated CORS origins; default *)
+    XPARK_DATA_DIR (exports/work dir; default apps/api/data)
 """
 from __future__ import annotations
 
 import argparse
 import base64
+import hmac
 import itertools
 import json
 import os
+import shutil
+import subprocess
 import threading
 import time
 import urllib.error
@@ -45,6 +56,64 @@ DEFAULT_VIDEO_WORKFLOW = REPO_ROOT / "apps/web/public/workflows/h3_ref2va.api.js
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
 JOB_COUNTER = itertools.count(1)
+
+CAPABILITIES = {
+    "image": {
+        "model": "Qwen Image 2.1 7B",
+        "inputs": ["prompt", "negative_prompt", "width", "height", "seed", "steps", "sampler", "reference_images"],
+        "max_reference_images": 4,
+        "aspect_ratios": ["9:16", "16:9", "1:1"],
+    },
+    "video": {
+        "model": "MiniMax H3 Ref2VA",
+        "inputs": ["prompt", "negative_prompt", "width", "height", "length", "seed", "steps", "sampler", "reference_images"],
+        "max_reference_images": 3,
+        "fps": 24,
+        "length_range": [1, 240],
+    },
+    "compose": {
+        "tool": "ffmpeg",
+        "available": bool(shutil.which("ffmpeg")),
+        "containers": ["mp4"],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Event bus (replayable by seq, per project)
+# ---------------------------------------------------------------------------
+class EventBus:
+    def __init__(self, limit: int = 2000) -> None:
+        self._lock = threading.Lock()
+        self._seq = 0
+        self._events: dict[str, list[dict]] = {}
+        self._limit = limit
+
+    def publish(self, project_id: str, type_: str, summary: str, **fields) -> dict:
+        with self._lock:
+            self._seq += 1
+            event = {
+                "event_id": f"evt_{self._seq}",
+                "seq": self._seq,
+                "project_id": project_id,
+                "type": type_,
+                "summary": summary,
+                "timestamp": time.time(),
+                "state_version": self._seq,
+                **fields,
+            }
+            bucket = self._events.setdefault(project_id, [])
+            bucket.append(event)
+            if len(bucket) > self._limit:
+                del bucket[: -self._limit]
+            return event
+
+    def since(self, project_id: str, since_seq: int) -> list[dict]:
+        with self._lock:
+            return [e for e in self._events.get(project_id, []) if e["seq"] > since_seq]
+
+
+EVENT_BUS = EventBus()
 
 
 # ---------------------------------------------------------------------------
@@ -258,22 +327,38 @@ def poll_job(comfy_url: str, job: dict) -> None:
 # ---------------------------------------------------------------------------
 # Request handler
 # ---------------------------------------------------------------------------
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+
 class Handler(BaseHTTPRequestHandler):
     comfy_url = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
     image_workflow = Path(os.environ.get("IMAGE_WORKFLOW", str(DEFAULT_IMAGE_WORKFLOW)))
     video_workflow = Path(os.environ.get("VIDEO_WORKFLOW", str(DEFAULT_VIDEO_WORKFLOW)))
+    api_token = os.environ.get("API_TOKEN", "")
+    allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+    data_dir = Path(os.environ.get("XPARK_DATA_DIR", str(REPO_ROOT / "apps/api/data")))
 
     def log_message(self, fmt, *args):  # quieter default logging
         print(f"[api] {self.address_string()} {fmt % args}")
 
     # -- low level helpers ---------------------------------------------------
-    def _send(self, code: int, payload, content_type="application/json"):
+    def _cors_origin(self) -> str:
+        origin = self.headers.get("Origin", "")
+        if "*" in self.allowed_origins:
+            return "*"
+        return origin if origin in self.allowed_origins else (self.allowed_origins[0] if self.allowed_origins else "")
+
+    def _send(self, code: int, payload, content_type="application/json", extra: dict | None = None):
         body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        for key, value in (extra or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -281,6 +366,15 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
         return json.loads(raw.decode() or "{}") if raw else {}
+
+    def _authorized(self, query: dict) -> bool:
+        if not self.api_token:
+            return True
+        header = self.headers.get("Authorization", "")
+        if hmac.compare_digest(header, f"Bearer {self.api_token}"):
+            return True
+        supplied = (query.get("token") or [""])[0]
+        return hmac.compare_digest(supplied, self.api_token)
 
     def do_OPTIONS(self):  # noqa: N802
         self._send(204, b"", "text/plain")
@@ -291,29 +385,19 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed.query)
         try:
             if path == "/api/health":
-                comfy = {"reachable": False}
-                try:
-                    stats = http_json(f"{self.comfy_url}/system_stats", timeout=8)
-                    comfy = {
-                        "reachable": True,
-                        "version": (stats.get("system") or {}).get("comfyui_version"),
-                        "device": ((stats.get("devices") or [{}])[0]).get("name"),
-                    }
-                except Exception:  # noqa: BLE001
-                    pass
-                return self._send(200, {"ok": True, "comfy": comfy,
-                                        "image_workflow": str(self.image_workflow),
-                                        "video_workflow": str(self.video_workflow)})
+                return self._health()
+            if path.startswith("/api/") and not self._authorized(query):
+                return self._send(401, {"error": "unauthorized"})
+            if path == "/api/capabilities":
+                caps = json.loads(json.dumps(CAPABILITIES))
+                caps["compose"]["available"] = bool(shutil.which("ffmpeg"))
+                return self._send(200, caps)
+            if path == "/api/events":
+                return self._stream_events(query)
             if path == "/api/comfy/view":
-                query_string = urllib.parse.urlencode(
-                    {
-                        "filename": (query.get("filename") or [""])[0],
-                        "subfolder": (query.get("subfolder") or [""])[0],
-                        "type": (query.get("type") or ["output"])[0],
-                    }
-                )
-                data, ctype = http_bytes(f"{self.comfy_url}/view?{query_string}")
-                return self._send(200, data, ctype)
+                return self._comfy_view(query)
+            if path.startswith("/api/exports/"):
+                return self._serve_export(path.rsplit("/", 1)[-1])
             if path.startswith("/api/images/jobs/"):
                 return self._job_status(path.rsplit("/", 1)[-1])
             if path.startswith("/api/videos/jobs/"):
@@ -324,16 +408,84 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
         try:
+            if not self._authorized(query):
+                return self._send(401, {"error": "unauthorized"})
             if parsed.path == "/api/images/jobs":
                 return self._create_job("image", self._json_body())
             if parsed.path == "/api/videos/jobs":
                 return self._create_job("video", self._json_body())
+            if parsed.path == "/api/productions/compose":
+                return self._compose(self._json_body())
             return self._send(404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
             return self._send(500, {"error": str(exc)})
 
-    # -- job handlers --------------------------------------------------------
+    # -- endpoints -----------------------------------------------------------
+    def _health(self):
+        comfy = {"reachable": False}
+        try:
+            stats = http_json(f"{self.comfy_url}/system_stats", timeout=8)
+            comfy = {
+                "reachable": True,
+                "version": (stats.get("system") or {}).get("comfyui_version"),
+                "device": ((stats.get("devices") or [{}])[0]).get("name"),
+            }
+        except Exception:  # noqa: BLE001
+            pass
+        return self._send(200, {
+            "ok": True,
+            "comfy": comfy,
+            "image_workflow": str(self.image_workflow),
+            "video_workflow": str(self.video_workflow),
+            "ffmpeg": bool(shutil.which("ffmpeg")),
+            "auth": bool(self.api_token),
+        })
+
+    def _comfy_view(self, query: dict):
+        query_string = urllib.parse.urlencode({
+            "filename": (query.get("filename") or [""])[0],
+            "subfolder": (query.get("subfolder") or [""])[0],
+            "type": (query.get("type") or ["output"])[0],
+        })
+        data, ctype = http_bytes(f"{self.comfy_url}/view?{query_string}")
+        return self._send(200, data, ctype)
+
+    def _serve_export(self, name: str):
+        target = (self.data_dir / "exports" / name).resolve()
+        exports = (self.data_dir / "exports").resolve()
+        if exports not in target.parents or not target.is_file():
+            return self._send(404, {"error": "export not found"})
+        return self._send(200, target.read_bytes(), "video/mp4")
+
+    def _stream_events(self, query: dict):
+        if not self._authorized(query):
+            return self._send(401, {"error": "unauthorized"})
+        project_id = (query.get("project_id") or ["default"])[0]
+        since = int((query.get("since") or ["0"])[0] or 0)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", self._cors_origin())
+        self.end_headers()
+        deadline = time.time() + 30 * 60
+        last = since
+        try:
+            while time.time() < deadline:
+                for event in EVENT_BUS.since(project_id, last):
+                    last = event["seq"]
+                    frame = f"id: {event['seq']}\ndata: {json.dumps(event)}\n\n"
+                    self.wfile.write(frame.encode())
+                self.wfile.write(b": keep-alive\n\n")
+                self.wfile.flush()
+                time.sleep(1)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            self.close_connection = True
+
     def _create_job(self, kind: str, req: dict):
         workflow = self.image_workflow if kind == "image" else self.video_workflow
         if not workflow.exists():
@@ -342,6 +494,7 @@ class Handler(BaseHTTPRequestHandler):
         graph = builder(self.comfy_url, workflow, req)
         prompt_id = submit_graph(self.comfy_url, graph)
         job_id = f"job_{next(JOB_COUNTER):04d}_{uuid.uuid4().hex[:8]}"
+        project_id = str(req.get("project_id") or "default")
         with JOBS_LOCK:
             JOBS[job_id] = {
                 "job_id": job_id,
@@ -349,8 +502,16 @@ class Handler(BaseHTTPRequestHandler):
                 "prompt_id": prompt_id,
                 "state": "running",
                 "request": req,
+                "project_id": project_id,
                 "created_at": time.time(),
             }
+        EVENT_BUS.publish(
+            project_id,
+            "step.queued",
+            f"{kind} job queued",
+            run_id=job_id,
+            payload={"job_id": job_id, "prompt_id": prompt_id, "kind": kind},
+        )
         print(f"[api] created {kind} job {job_id} -> comfy {prompt_id}")
         return self._send(202, {"job_id": job_id, "prompt_id": prompt_id, "state": "running"})
 
@@ -359,17 +520,100 @@ class Handler(BaseHTTPRequestHandler):
             job = JOBS.get(job_id)
         if not job:
             return self._send(404, {"error": "unknown job"})
+        previous = job["state"]
         if job["state"] == "running":
             try:
                 poll_job(self.comfy_url, job)
             except Exception as exc:  # noqa: BLE001
                 job["last_error"] = str(exc)
+        if job["state"] != previous:
+            event_type = {
+                "succeeded": "artifact.created",
+                "failed": "run.failed",
+            }.get(job["state"], "tool.progress")
+            EVENT_BUS.publish(
+                job.get("project_id", "default"),
+                event_type,
+                f"{job['kind']} job {job['state']}",
+                run_id=job_id,
+                artifact_ids=[job["artifact"]["asset_id"]] if job.get("artifact") else [],
+                payload={"job_id": job_id, "state": job["state"], "error": job.get("error")},
+            )
         payload = {"state": job["state"]}
         if job.get("artifact"):
             payload["artifact"] = job["artifact"]
         if job.get("error"):
             payload["error"] = job["error"]
         return self._send(200, payload)
+
+    def _download_clip(self, clip, work: Path, index: int) -> Path:
+        target = work / f"clip_{index:03d}.mp4"
+        if isinstance(clip, dict):
+            if clip.get("filename"):
+                query = urllib.parse.urlencode({
+                    "filename": clip["filename"],
+                    "subfolder": clip.get("subfolder", ""),
+                    "type": clip.get("type", "output"),
+                })
+                data, _ = http_bytes(f"{self.comfy_url}/view?{query}")
+                target.write_bytes(data)
+                return target
+            clip = clip.get("url", "")
+        parsed = urllib.parse.urlparse(str(clip))
+        query = urllib.parse.parse_qs(parsed.query)
+        if query.get("filename"):
+            data, _ = http_bytes(f"{self.comfy_url}{parsed.path}?{parsed.query}")
+            target.write_bytes(data)
+            return target
+        if parsed.path.startswith("/api/exports/"):
+            local = self.data_dir / "exports" / parsed.path.rsplit("/", 1)[-1]
+            shutil.copy2(local, target)
+            return target
+        data, _ = http_bytes(str(clip))
+        target.write_bytes(data)
+        return target
+
+    def _compose(self, req: dict):
+        ffmpeg = shutil.which("ffmpeg")
+        clips = req.get("clips") or []
+        if not clips:
+            return self._send(400, {"error": "no clips"})
+        if not ffmpeg:
+            return self._send(503, {"error": "ffmpeg_unavailable", "clips": len(clips)})
+        work = self.data_dir / "compose" / uuid.uuid4().hex
+        work.mkdir(parents=True, exist_ok=True)
+        exports = self.data_dir / "exports"
+        exports.mkdir(parents=True, exist_ok=True)
+        try:
+            files = [self._download_clip(c, work, i) for i, c in enumerate(clips)]
+            listfile = work / "list.txt"
+            listfile.write_text("".join(f"file '{f}'\n" for f in files), encoding="utf-8")
+            out = exports / f"final_{uuid.uuid4().hex[:10]}.mp4"
+            base = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(listfile)]
+            try:
+                subprocess.run([*base, "-c", "copy", str(out)], check=True, capture_output=True)
+            except subprocess.CalledProcessError:
+                subprocess.run(
+                    [*base, "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", str(out)],
+                    check=True,
+                    capture_output=True,
+                )
+        except Exception as exc:  # noqa: BLE001
+            return self._send(500, {"error": f"compose failed: {exc}"})
+        project_id = str(req.get("project_id") or "default")
+        EVENT_BUS.publish(
+            project_id,
+            "export.completed",
+            f"final cut {out.name}",
+            artifact_ids=[out.name],
+            payload={"storage_key": f"exports/{out.name}", "clips": len(clips)},
+        )
+        return self._send(200, {
+            "url": f"/api/exports/{out.name}",
+            "storage_key": f"exports/{out.name}",
+            "size_bytes": out.stat().st_size,
+            "clips": len(clips),
+        })
 
 
 def main() -> int:
@@ -379,15 +623,18 @@ def main() -> int:
     ap.add_argument("--comfy-url", default=Handler.comfy_url)
     ap.add_argument("--image-workflow", default=str(Handler.image_workflow))
     ap.add_argument("--video-workflow", default=str(Handler.video_workflow))
+    ap.add_argument("--api-token", default=Handler.api_token)
     args = ap.parse_args()
 
     Handler.comfy_url = args.comfy_url.rstrip("/")
     Handler.image_workflow = Path(args.image_workflow)
     Handler.video_workflow = Path(args.video_workflow)
+    Handler.api_token = args.api_token
 
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    server = Server((args.host, args.port), Handler)
     print(f"[api] listening on http://{args.host}:{args.port}")
-    print(f"[api] comfy={Handler.comfy_url} image={Handler.image_workflow} video={Handler.video_workflow}")
+    print(f"[api] comfy={Handler.comfy_url} auth={'on' if Handler.api_token else 'off'} "
+          f"ffmpeg={'yes' if shutil.which('ffmpeg') else 'no'}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

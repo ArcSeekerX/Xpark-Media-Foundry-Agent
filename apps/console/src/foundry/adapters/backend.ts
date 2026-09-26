@@ -3,6 +3,8 @@
 // ComfyUI directly: image and video jobs go through the backend, which owns
 // the ComfyUI templates, reference uploads and artifact URLs.
 import type {
+  Capabilities,
+  ComposeResult,
   GeneratedMedia,
   ImageModel,
   ImageRequest,
@@ -88,15 +90,47 @@ export class GenerationBackend {
   name = "generation-backend";
   available: boolean;
   private readonly baseUrl: string;
+  private readonly token: string;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string, token = "") {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.available = this.baseUrl.length > 0;
+    this.token = token;
   }
 
   private url(path: string): string {
     const base = this.baseUrl || "/api";
     return `${base}${path}`;
+  }
+
+  private authHeaders(): Record<string, string> {
+    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
+  }
+
+  async capabilities(): Promise<Capabilities> {
+    return requestJson<Capabilities>(this.url("/capabilities"), {
+      headers: this.authHeaders(),
+    });
+  }
+
+  async compose(clips: string[], projectId: string): Promise<ComposeResult> {
+    const res = await requestJson<ComposeResult>(
+      this.url("/productions/compose"),
+      {
+        method: "POST",
+        headers: this.authHeaders(),
+        body: JSON.stringify({ clips, project_id: projectId }),
+      },
+      300000,
+    );
+    return { ...res, url: this.resolveArtifact(res.url) ?? res.url };
+  }
+
+  eventsUrl(projectId: string, since = 0): string {
+    const base = this.baseUrl || "/api";
+    const params = new URLSearchParams({ project_id: projectId, since: String(since) });
+    if (this.token) params.set("token", this.token);
+    return `${base}/events?${params.toString()}`;
   }
 
   // Artifact URLs come back as backend-relative paths (e.g. /api/comfy/view).

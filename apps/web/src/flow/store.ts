@@ -3,6 +3,7 @@ import type {
   Asset,
   AssetBinding,
   Brief,
+  DiscardRecord,
   FlowEvent,
   ProductionParams,
   Project,
@@ -25,6 +26,12 @@ export interface Metrics {
   importedAssets: number;
   imageGenerations: number;
   imageReuses: number;
+  discardedAssets: number;
+  regenerations: number;
+  routeReuses: number;
+  routeGenerates: number;
+  routeModelAccepted: number;
+  routeShadowDisagreements: number;
 }
 
 export interface State {
@@ -67,6 +74,12 @@ export const initialState: State = {
     importedAssets: 0,
     imageGenerations: 0,
     imageReuses: 0,
+    discardedAssets: 0,
+    regenerations: 0,
+    routeReuses: 0,
+    routeGenerates: 0,
+    routeModelAccepted: 0,
+    routeShadowDisagreements: 0,
   },
 };
 
@@ -103,6 +116,10 @@ export type Action =
   | { type: "add_step"; step: StepRun }
   | { type: "patch_step"; stepId: string; patch: Partial<StepRun> }
   | { type: "add_asset"; asset: Asset }
+  | { type: "patch_asset"; assetId: string; patch: Partial<Asset> }
+  | { type: "discard_asset"; assetId: string; record: DiscardRecord }
+  | { type: "restore_asset"; assetId: string }
+  | { type: "accept_asset"; shotId: string; assetId: string }
   | { type: "set_phase"; phase: State["phase"] }
   | { type: "set_final"; asset: Asset }
   | { type: "set_archive"; archive: ArchiveRecord }
@@ -237,6 +254,57 @@ export function reducer(state: State, action: Action): State {
       };
     case "add_asset":
       return { ...state, assets: [...state.assets, action.asset] };
+    case "patch_asset":
+      return {
+        ...state,
+        assets: state.assets.map((a) =>
+          a.assetId === action.assetId ? { ...a, ...action.patch } : a,
+        ),
+      };
+    case "discard_asset":
+      return {
+        ...state,
+        assets: state.assets.map((a) =>
+          a.assetId === action.assetId
+            ? { ...a, status: "discarded", discard: action.record }
+            : a,
+        ),
+      };
+    case "restore_asset":
+      return {
+        ...state,
+        assets: state.assets.map((a) =>
+          a.assetId === action.assetId
+            ? { ...a, status: "candidate", discard: undefined }
+            : a,
+        ),
+      };
+    case "accept_asset": {
+      const target = state.assets.find((a) => a.assetId === action.assetId);
+      const runId =
+        target && typeof target.metadata.runId === "string"
+          ? (target.metadata.runId as string)
+          : undefined;
+      return {
+        ...state,
+        assets: state.assets.map((a) => {
+          if (a.metadata.shotId !== action.shotId) return a;
+          if (a.assetId === action.assetId) return { ...a, status: "accepted" };
+          if (a.status === "accepted") return { ...a, status: "candidate" };
+          return a;
+        }),
+        shots: state.shots.map((s) =>
+          s.shotId === action.shotId
+            ? {
+                ...s,
+                phase: "ACCEPTED",
+                acceptedAssetId: action.assetId,
+                acceptedRunId: runId ?? s.acceptedRunId,
+              }
+            : s,
+        ),
+      };
+    }
     case "set_phase":
       return { ...state, phase: action.phase };
     case "set_final":

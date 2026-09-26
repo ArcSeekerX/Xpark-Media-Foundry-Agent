@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createAdapters } from "../adapters";
-import type { Adapters, GeneratedMedia, RenderHandle } from "../adapters/types";
+import type { Adapters, Capabilities, GeneratedMedia, RenderHandle } from "../adapters/types";
 import { refinePrompt } from "../agent/refine";
 import { planProject, planFromMaterials } from "../agent/planner";
 import { applySkill, bestSkill } from "../skills/router";
 import { skillById } from "../skills/registry";
+import { allowedActions, routeShot } from "../routing/router";
 import { config } from "../config";
 import { EventLog } from "./events";
 import { initialState, reducer } from "./store";
@@ -14,20 +15,65 @@ import type {
   AgentMessage,
   Asset,
   AssetBinding,
+  CandidateStatus,
+  DiscardReason,
+  DiscardRecord,
   FlowEvent,
   ProductionParams,
   PromptSpec,
   ReferenceImage,
   RenderRequest,
+  RouteDecision,
   Run,
   Shot,
 } from "../types";
+
+const STORAGE_KEY = "xpark-foundry:flow:v1";
+
+export interface GenerateOverrides {
+  seedDelta?: number;
+  promptVariant?: number;
+  steps?: number;
+  sampler?: string;
+}
+
+export type SseStatus = "off" | "connecting" | "open" | "closed";
+
+interface BackendEvent {
+  event_id: string;
+  seq: number;
+  project_id: string;
+  type: string;
+  summary: string;
+  timestamp: number;
+  run_id?: string;
+  artifact_ids?: string[];
+  state_version?: number;
+  payload?: unknown;
+}
+
+function toFlowEvent(e: BackendEvent): FlowEvent {
+  return {
+    eventId: e.event_id,
+    seq: e.seq,
+    projectId: e.project_id,
+    runId: e.run_id,
+    type: e.type as FlowEvent["type"],
+    actor: "backend",
+    timestamp: new Date((e.timestamp ?? 0) * 1000).toISOString(),
+    summary: e.summary,
+    artifactIds: e.artifact_ids ?? [],
+    stateVersion: e.state_version ?? e.seq,
+    payload: e.payload,
+  };
+}
 
 function makeAsset(
   media: GeneratedMedia,
   projectId: string,
   source: Asset["source"],
   metadata: Record<string, unknown> = {},
+  status: CandidateStatus = "candidate",
 ): Asset {
   return {
     assetId: media.assetId,
@@ -39,7 +85,48 @@ function makeAsset(
     previewKey: media.previewKey,
     metadata: { ...metadata, remoteUrl: media.remoteUrl },
     state: "READY",
+    status,
   };
+}
+
+// Persist a size-bounded snapshot so a refresh keeps the task. Large inline
+// data URLs are dropped from the snapshot when the payload would exceed quota.
+function loadPersisted(): State | undefined {
+  if (!config.persist) return undefined;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as State;
+    if (!parsed || !Array.isArray(parsed.shots)) return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function persist(state: State): void {
+  if (!config.persist) return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Quota exceeded: retry without heavy inline payloads.
+    try {
+      const light: State = {
+        ...state,
+        assets: state.assets.map((a) => {
+          const metadata = { ...a.metadata };
+          delete metadata.dataUrl;
+          if (typeof metadata.remoteUrl === "string" && metadata.remoteUrl.startsWith("data:")) {
+            delete metadata.remoteUrl;
+          }
+          return { ...a, metadata };
+        }),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(light));
+    } catch {
+      /* give up silently; persistence is best-effort */
+    }
+  }
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -81,6 +168,8 @@ export interface AgentFlow {
   state: State;
   adapters: Adapters;
   log: EventLog;
+  sseStatus: SseStatus;
+  capabilities?: Capabilities;
   guide: (sentence: string) => Promise<void>;
   editShotPrompt: (shotId: string, positive: string, negative: string) => void;
   selectSkill: (sceneId: string, skillId: string) => void;
@@ -92,8 +181,16 @@ export interface AgentFlow {
   bindAsset: (shotId: string, assetId: string, role: AssetBinding["role"]) => void;
   unbindAsset: (shotId: string, bindingId: string) => void;
   generateImage: (shotId: string) => Promise<Asset | undefined>;
-  generateShot: (shotId: string) => Promise<void>;
+  generateShot: (shotId: string, overrides?: GenerateOverrides) => Promise<void>;
   generateAll: () => Promise<void>;
+  regenerateShot: (
+    shotId: string,
+    options?: { seedDelta?: number; promptVariant?: number; steps?: number; sampler?: string },
+  ) => Promise<void>;
+  acceptCandidate: (shotId: string, assetId: string) => void;
+  discardCandidate: (assetId: string, reason: DiscardReason, note?: string) => void;
+  restoreCandidate: (assetId: string) => void;
+  cancel: () => void;
   review: (shotId: string, verdict: "accept" | "reject") => void;
   compose: (options?: { allowPartial?: boolean }) => Promise<void>;
   archive: () => Promise<void>;
@@ -107,12 +204,15 @@ export interface AgentFlow {
 }
 
 export function useAgentFlow(): AgentFlow {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(reducer, initialState, (init) => loadPersisted() ?? init);
   const store = useRef<State>(state);
   store.current = state;
+  const cancelRef = useRef(false);
 
   const log = useRef(new EventLog()).current;
   const adapters = useMemo(() => createAdapters(), []);
+  const [sseStatus, setSseStatus] = useState<SseStatus>("off");
+  const [capabilities, setCapabilities] = useState<Capabilities | undefined>();
 
   const emit = useCallback(
     (input: Parameters<EventLog["emit"]>[0]): FlowEvent => {
@@ -132,6 +232,52 @@ export function useAgentFlow(): AgentFlow {
     },
     [],
   );
+
+  // Best-effort persistence: debounce writes so a refresh keeps the task view.
+  useEffect(() => {
+    const timer = setTimeout(() => persist(state), 400);
+    return () => clearTimeout(timer);
+  }, [state]);
+
+  // Load model capabilities from the backend (reference limits, ffmpeg, ...).
+  useEffect(() => {
+    const backend = adapters.backend;
+    if (!backend?.capabilities) return;
+    let alive = true;
+    backend
+      .capabilities()
+      .then((caps) => alive && setCapabilities(caps))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [adapters.backend]);
+
+  // Replayable event stream: ingest backend events with id-based dedup.
+  useEffect(() => {
+    const backend = adapters.backend;
+    if (!config.sse || !backend?.eventsUrl) {
+      setSseStatus("off");
+      return;
+    }
+    const projectId = state.project?.projectId ?? "default";
+    const seen = new Set<string>();
+    setSseStatus("connecting");
+    const source = new EventSource(backend.eventsUrl(projectId, 0));
+    source.onopen = () => setSseStatus("open");
+    source.onerror = () => setSseStatus("closed");
+    source.onmessage = (msg) => {
+      try {
+        const event = JSON.parse(msg.data) as BackendEvent;
+        if (seen.has(event.event_id)) return;
+        seen.add(event.event_id);
+        dispatch({ type: "add_event", event: toFlowEvent(event) });
+      } catch {
+        /* ignore malformed frame */
+      }
+    };
+    return () => source.close();
+  }, [adapters.backend, state.project?.projectId]);
 
   // -------------------------------------------------------------------------
   // 1. One-sentence guidance -> plan
@@ -481,11 +627,15 @@ export function useAgentFlow(): AgentFlow {
   );
 
   const generateShot = useCallback(
-    async (shotId: string) => {
+    async (shotId: string, overrides?: GenerateOverrides) => {
       const snapshot = store.current;
       const shot = snapshot.shots.find((s) => s.shotId === shotId);
       const project = snapshot.project;
       if (!shot || !project) return;
+      if (cancelRef.current) {
+        say("调度已取消，未提交新任务。", "agent");
+        return;
+      }
       const scene = snapshot.scenes.find((s) => s.sceneId === shot.sceneId);
       const skill = skillById(shot.skillId) ?? bestSkill(scene?.synopsis ?? "").skill;
 
@@ -496,9 +646,77 @@ export function useAgentFlow(): AgentFlow {
         production?.width,
         production?.height,
       );
-      const genSteps = production?.steps ?? skill.params.steps;
-      const genSampler = production?.sampler ?? skill.params.sampler;
+      const genSteps = overrides?.steps ?? production?.steps ?? skill.params.steps;
+      const genSampler = overrides?.sampler ?? production?.sampler ?? skill.params.sampler;
       const genFrames = production?.frames ?? config.video.length;
+
+      // ---- Intelligent routing: rules first, optional model proposal ----
+      const boundRefs = collectBoundReferences(snapshot, shot);
+      const priorRun = [...snapshot.runs].reverse().find((r) => r.shotId === shotId);
+      const routeInput = {
+        materialPolicy: shot.spec.materialPolicy,
+        hasImportedImage: boundRefs.some((r) => r.source === "imported"),
+        hasGeneratedImage: boundRefs.some((r) => r.source === "generated"),
+        hasReuseClip: shot.bindings.some((b) => b.role === "reuse_clip"),
+        imageAvailable: adapters.image.available,
+        imageEnabled: config.image.enabled,
+        priorVerdict: priorRun?.score?.verdict,
+        repairs: priorRun?.score?.verdict === "repair" ? 1 : 0,
+        maxRepairs: config.quality.maxRepairs,
+        advice: null as { selectedAction: string; modelId: string } | null,
+      };
+      try {
+        const advice = await adapters.decision.propose({
+          stateHash: `sha256:${shortHash(`${shotId}:${shot.spec.action}`)}`,
+          allowedActions: allowedActions(routeInput) as string[],
+          summary: `镜头「${shot.title}」：${shot.spec.action}`,
+          evidenceIds: [shotId],
+        });
+        routeInput.advice = { selectedAction: advice.selectedAction, modelId: advice.modelId };
+        emit({
+          projectId: project.projectId,
+          type: "decision.proposed",
+          summary: `建议 ${advice.selectedAction}`,
+          actor: "decision-port",
+          payload: advice,
+        });
+      } catch {
+        emit({
+          projectId: project.projectId,
+          type: "decision.fallback",
+          summary: "决策端口不可用，回退规则路由",
+          actor: "router",
+        });
+      }
+      const route: RouteDecision = routeShot(routeInput, {
+        shadow: config.routing.shadow && !config.routing.auto,
+        minConfidence: config.routing.minConfidence,
+      });
+      if (route.source === "model") {
+        dispatch({ type: "bump", key: "routeModelAccepted" });
+      } else if (route.shadow && route.modelAction && route.modelAction !== route.action) {
+        dispatch({ type: "bump", key: "routeShadowDisagreements" });
+      }
+      emit({
+        projectId: project.projectId,
+        type: "decision.applied",
+        summary: `路由 ${route.action}（${route.source}${route.shadow ? " · shadow" : ""}）`,
+        actor: "router",
+        payload: route,
+      });
+      dispatch({
+        type: "bump",
+        key: route.action === "reuse_imported" || route.action === "reuse_clip"
+          ? "routeReuses"
+          : "routeGenerates",
+      });
+      say(`智能路由：${route.action}｜${route.reasons.join("；")}`, "decision", { route });
+
+      if (route.action === "human_review") {
+        dispatch({ type: "patch_shot", shotId, patch: { phase: "HUMAN_REVIEW" } });
+        say(`镜头「${shot.title}」按路由进入人工复核。`, "agent");
+        return;
+      }
 
       const runId = uid("run");
       const run: Run = {
@@ -508,7 +726,10 @@ export function useAgentFlow(): AgentFlow {
         attemptId: uid("att"),
         commandId: uid("cmd"),
         state: "PROMPT_READY",
-        seed: (production?.seed ?? 20260000) + snapshot.shots.indexOf(shot),
+        seed:
+          (production?.seed ?? 20260000) +
+          snapshot.shots.indexOf(shot) +
+          (overrides?.seedDelta ?? 0),
         params: { steps: genSteps, sampler: genSampler },
         artifactIds: [],
         createdAt: nowIso(),
@@ -535,29 +756,41 @@ export function useAgentFlow(): AgentFlow {
       dispatch({ type: "set_run_phase", shotId, phase: "QUEUED" });
 
       try {
-        // 1. prompt refine
+        // 1. prompt refine (with optional variant for regeneration)
         dispatch({ type: "set_run_phase", shotId, phase: "PROMPT_READY" });
         let promptSpec: PromptSpec = await refinePrompt(adapters.text, shot, scene!, skill);
+        if (overrides?.promptVariant !== undefined && promptSpec.variants.length > 0) {
+          promptSpec = {
+            ...promptSpec,
+            positive: promptSpec.variants[overrides.promptVariant % promptSpec.variants.length],
+          };
+        }
         say(`镜头「${shot.title}」提示词已优化（${adapters.text.available ? "text-model" : "skill-template"}）。`, "agent");
 
-        // 2. reference images: prefer imported art, generate a keyframe only for gaps
-        let referenceImages = collectBoundReferences(store.current, shot);
-        const importedRefs = referenceImages.filter((r) => r.source === "imported");
-        if (importedRefs.length > 0) {
+        // 2. reference images: imported/generated refs are reused; only
+        //    image_conditioned gaps trigger a new keyframe.
+        let referenceImages = boundRefs;
+        if (routeInput.hasGeneratedImage) {
+          say(`镜头「${shot.title}」复用已生成关键帧。`, "tool");
+        } else if (route.action === "reuse_imported" || route.action === "reuse_clip") {
           dispatch({ type: "bump", key: "imageReuses" });
           say(
-            `镜头「${shot.title}」复用 ${importedRefs.length} 个导入参考素材，跳过生图。`,
+            `镜头「${shot.title}」复用 ${referenceImages.length} 个导入参考素材，跳过生图。`,
             "tool",
           );
-          emit({
-            projectId: project.projectId,
-            runId,
-            stepId,
-            type: "agent.message",
-            summary: `复用 ${importedRefs.length} 个导入参考素材`,
-            actor: "asset-service",
-          });
-        } else if (adapters.image.available && config.image.enabled) {
+        } else if (route.action === "image_conditioned" && adapters.image.available && config.image.enabled) {
+          const maxRefs = capabilities?.image?.max_reference_images ?? 4;
+          if (referenceImages.length > maxRefs) {
+            emit({
+              projectId: project.projectId,
+              runId,
+              stepId,
+              type: "tool.progress",
+              summary: `参考图 ${referenceImages.length} 超过能力上限 ${maxRefs}，仅使用前 ${maxRefs} 张`,
+              actor: "capability-check",
+            });
+            referenceImages = referenceImages.slice(0, maxRefs);
+          }
           dispatch({ type: "set_run_phase", shotId, phase: "ASSET_READY" });
           const keyframe = await generateImage(shotId);
           if (keyframe) {
@@ -570,7 +803,7 @@ export function useAgentFlow(): AgentFlow {
             runId,
             stepId,
             type: "tool.progress",
-            summary: "生图适配器未启用，跳过图像条件",
+            summary: "按路由直接文本条件生成",
             actor: "image-adapter",
           });
         }
@@ -578,6 +811,10 @@ export function useAgentFlow(): AgentFlow {
         // 3. render + QC + repair loop
         let accepted = false;
         for (let attempt = 0; attempt <= config.quality.maxRepairs; attempt += 1) {
+          if (cancelRef.current) {
+            say(`镜头「${shot.title}」在安全边界停止（已取消）。`, "agent");
+            break;
+          }
           dispatch({ type: "set_run_phase", shotId, phase: "RENDERING" });
           emit({ projectId: project.projectId, runId, stepId, type: "agent.started", summary: `开始渲染（第 ${attempt + 1} 次）`, actor: adapters.video.name });
           const req: RenderRequest = {
@@ -611,6 +848,7 @@ export function useAgentFlow(): AgentFlow {
           dispatch({ type: "patch_run", runId, patch: { artifactIds: [...run.artifactIds, asset.assetId] } });
           dispatch({ type: "set_run_phase", shotId, phase: "GENERATED" });
           emit({ projectId: project.projectId, runId, stepId, type: "artifact.created", summary: `生成产物 ${asset.storageKey}`, actor: adapters.video.name, artifactIds: [asset.assetId] });
+          emit({ projectId: project.projectId, runId, stepId, type: "candidate.created", summary: `候选 ${asset.assetId}`, actor: "orchestrator", artifactIds: [asset.assetId] });
 
           dispatch({ type: "set_run_phase", shotId, phase: "SCORING" });
           const report = await adapters.judge.evaluate({ runId, shot: shot.spec, asset: media });
@@ -632,8 +870,17 @@ export function useAgentFlow(): AgentFlow {
 
           if (report.verdict === "accept") {
             accepted = true;
-            dispatch({ type: "set_run_phase", shotId, phase: "ACCEPTED" });
-            dispatch({ type: "patch_shot", shotId, patch: { phase: "ACCEPTED", acceptedRunId: runId } });
+            dispatch({ type: "accept_asset", shotId, assetId: asset.assetId });
+            dispatch({ type: "bump", key: "acceptedShots" });
+            emit({
+              projectId: project.projectId,
+              runId,
+              stepId,
+              type: "candidate.accepted",
+              summary: `采用候选 ${asset.assetId}`,
+              actor: "judge",
+              artifactIds: [asset.assetId],
+            });
             break;
           }
           if (report.verdict === "human_review" || attempt === config.quality.maxRepairs) {
@@ -673,27 +920,144 @@ export function useAgentFlow(): AgentFlow {
         say(`镜头「${shot.title}」执行失败：${message}`, "agent");
       }
     },
-    [adapters, emit, generateImage, say, waitForRender],
+    [adapters, capabilities, emit, generateImage, say, waitForRender],
   );
 
   const generateAll = useCallback(async () => {
+    cancelRef.current = false;
     dispatch({ type: "set_phase", phase: "producing" });
     for (const shot of store.current.shots) {
+      if (cancelRef.current) {
+        say("已取消后续调度，运行中的任务在安全边界停止。", "agent");
+        break;
+      }
       if (shot.phase === "ACCEPTED") continue;
       await generateShot(shot.shotId);
     }
     dispatch({ type: "set_phase", phase: "planned" });
-  }, [generateShot]);
+  }, [generateShot, say]);
+
+  const cancel = useCallback(() => {
+    cancelRef.current = true;
+    say("已请求取消：停止后续调度，运行中的任务在安全边界停止。", "agent");
+  }, [say]);
+
+  // -------------------------------------------------------------------------
+  // 2b. Candidate lifecycle: accept / discard / restore / regenerate
+  // -------------------------------------------------------------------------
+  const acceptCandidate = useCallback(
+    (shotId: string, assetId: string) => {
+      const projectId = store.current.project?.projectId ?? "unknown";
+      dispatch({ type: "accept_asset", shotId, assetId });
+      emit({
+        projectId,
+        type: "candidate.accepted",
+        summary: `采用候选 ${assetId}`,
+        actor: "human",
+        artifactIds: [assetId],
+      });
+      say("已采用该候选版本，将进入成片清单。", "agent");
+    },
+    [emit, say],
+  );
+
+  const discardCandidate = useCallback(
+    (assetId: string, reason: DiscardReason, note?: string) => {
+      const snapshot = store.current;
+      const projectId = snapshot.project?.projectId ?? "unknown";
+      const record: DiscardRecord = { reasonTag: reason, note, at: nowIso(), by: "human" };
+      const asset = snapshot.assets.find((a) => a.assetId === assetId);
+      const shotId = asset && typeof asset.metadata.shotId === "string"
+        ? (asset.metadata.shotId as string)
+        : undefined;
+      dispatch({ type: "discard_asset", assetId, record });
+      dispatch({ type: "bump", key: "discardedAssets" });
+      if (shotId) {
+        const shot = snapshot.shots.find((s) => s.shotId === shotId);
+        if (shot?.acceptedAssetId === assetId) {
+          dispatch({
+            type: "patch_shot",
+            shotId,
+            patch: { phase: "PROMPT_READY", acceptedAssetId: undefined, acceptedRunId: undefined },
+          });
+        }
+      }
+      emit({
+        projectId,
+        type: "candidate.discarded",
+        summary: `弃用候选 ${assetId}（${reason}）`,
+        actor: "human",
+        artifactIds: [assetId],
+      });
+      say(`已弃用该候选（${reason}），可在回收站中恢复或重生成。`, "tool");
+    },
+    [emit, say],
+  );
+
+  const restoreCandidate = useCallback(
+    (assetId: string) => {
+      const projectId = store.current.project?.projectId ?? "unknown";
+      dispatch({ type: "restore_asset", assetId });
+      emit({
+        projectId,
+        type: "candidate.created",
+        summary: `恢复候选 ${assetId}`,
+        actor: "human",
+        artifactIds: [assetId],
+      });
+      say("已从回收站恢复为候选。", "tool");
+    },
+    [emit, say],
+  );
+
+  const regenerateShot = useCallback(
+    async (
+      shotId: string,
+      options?: { seedDelta?: number; promptVariant?: number; steps?: number; sampler?: string },
+    ) => {
+      const snapshot = store.current;
+      const shot = snapshot.shots.find((s) => s.shotId === shotId);
+      if (!shot) return;
+      const projectId = snapshot.project?.projectId ?? "unknown";
+      const attempts = snapshot.runs.filter((r) => r.shotId === shotId).length;
+      dispatch({ type: "bump", key: "regenerations" });
+      emit({
+        projectId,
+        type: "candidate.regenerated",
+        summary: `重新生成「${shot.title}」（第 ${attempts + 1} 次尝试）`,
+        actor: "orchestrator",
+      });
+      say(`重新生成镜头「${shot.title}」…`, "agent");
+      await generateShot(shotId, {
+        seedDelta: options?.seedDelta ?? (attempts + 1) * 1000,
+        ...options,
+      });
+    },
+    [emit, generateShot, say],
+  );
 
   // -------------------------------------------------------------------------
   // 3. Human review / compose / archive
   // -------------------------------------------------------------------------
   const review = useCallback(
     (shotId: string, verdict: "accept" | "reject") => {
-      const shot = store.current.shots.find((s) => s.shotId === shotId);
+      const snapshot = store.current;
+      const shot = snapshot.shots.find((s) => s.shotId === shotId);
       if (!shot) return;
       if (verdict === "accept") {
-        dispatch({ type: "patch_shot", shotId, patch: { phase: "ACCEPTED" } });
+        const candidate = [...snapshot.assets]
+          .reverse()
+          .find(
+            (a) =>
+              a.metadata.shotId === shotId &&
+              (a.mediaType === "image" || a.mediaType === "video") &&
+              a.status !== "discarded",
+          );
+        if (candidate) {
+          dispatch({ type: "accept_asset", shotId, assetId: candidate.assetId });
+        } else {
+          dispatch({ type: "patch_shot", shotId, patch: { phase: "ACCEPTED" } });
+        }
         dispatch({ type: "bump", key: "acceptedShots" });
         say(`人工接受镜头「${shot.title}」。`, "agent");
       } else {
@@ -737,21 +1101,41 @@ export function useAgentFlow(): AgentFlow {
       // Preview URL: newest included shot video. Real ffmpeg concat is handled
       // by the backend when available; the last clip is a usable fallback.
       const includedIds = new Set(included.map((s) => s.shotId));
-      const clipPreview = snapshot.assets
-        .filter(
-          (a) =>
-            a.mediaType === "video" &&
-            typeof a.metadata.remoteUrl === "string" &&
-            includedIds.has(String(a.metadata.shotId)),
-        )
-        .at(-1);
+      const clips = snapshot.assets.filter(
+        (a) =>
+          a.mediaType === "video" &&
+          typeof a.metadata.remoteUrl === "string" &&
+          includedIds.has(String(a.metadata.shotId)),
+      );
+      const clipPreview = clips.at(-1);
+
+      // Real ffmpeg concat via the backend when available; otherwise fall back
+      // to the last accepted clip as a playable preview.
+      let composed: { url: string; storage_key: string } | undefined;
+      if (adapters.backend?.compose && clips.length > 0) {
+        try {
+          composed = await adapters.backend.compose(
+            clips.map((a) => String(a.metadata.remoteUrl)),
+            project.projectId,
+          );
+          emit({
+            projectId: project.projectId,
+            type: "agent.message",
+            summary: `后端合成完成（${composed.storage_key}）`,
+            actor: "backend",
+          });
+        } catch {
+          say("后端合成不可用（可能缺少 ffmpeg），改用片段预览。", "tool");
+        }
+      }
+
       const finalAsset: Asset = {
         assetId: uid("export"),
         projectId: project.projectId,
         source: "derived",
         mediaType: "video",
         version: 1,
-        storageKey: `exports/${project.projectId}/final.mp4`,
+        storageKey: composed?.storage_key ?? `exports/${project.projectId}/final.mp4`,
         previewKey: `exports/${project.projectId}/final.jpg`,
         parentAssetIds: included
           .map((s) => s.acceptedRunId)
@@ -763,8 +1147,8 @@ export function useAgentFlow(): AgentFlow {
           partial: included.length !== snapshot.shots.length,
           aspectRatio: snapshot.brief?.aspectRatio,
           manifest: `exports/${project.projectId}/manifest.json`,
-          remoteUrl: clipPreview?.metadata.remoteUrl,
-          previewKind: clipPreview ? "clip" : undefined,
+          remoteUrl: composed?.url ?? clipPreview?.metadata.remoteUrl,
+          previewKind: composed ? "composed" : clipPreview ? "clip" : undefined,
         },
         state: "READY",
       };
@@ -784,7 +1168,7 @@ export function useAgentFlow(): AgentFlow {
         "agent",
       );
     },
-    [emit, say],
+    [adapters, emit, say],
   );
 
   const archive = useCallback(async () => {
@@ -952,6 +1336,12 @@ export function useAgentFlow(): AgentFlow {
 
   const reset = useCallback(() => {
     log.clear();
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    cancelRef.current = false;
     dispatch({ type: "reset" });
   }, [log]);
 
@@ -962,6 +1352,8 @@ export function useAgentFlow(): AgentFlow {
     state: { ...state, metrics: metricsState },
     adapters,
     log,
+    sseStatus,
+    capabilities,
     guide,
     editShotPrompt,
     selectSkill,
@@ -971,6 +1363,11 @@ export function useAgentFlow(): AgentFlow {
     generateImage,
     generateShot,
     generateAll,
+    regenerateShot,
+    acceptCandidate,
+    discardCandidate,
+    restoreCandidate,
+    cancel,
     review,
     compose,
     archive,

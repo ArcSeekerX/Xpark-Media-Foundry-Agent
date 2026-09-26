@@ -4,16 +4,17 @@
 Runs without a GPU or ComfyUI install:
     python3 apps/api/test_server.py
 
-It starts a stub ComfyUI, then the generation backend, and exercises the image
-and video job APIs plus artifact proxying.
+Covers image/video jobs, artifact proxying, capabilities, the SSE event
+stream, bearer auth and the compose endpoint's graceful ffmpeg handling.
 """
 from __future__ import annotations
 
 import json
 import threading
 import unittest
+import urllib.error
 import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 import server
 
@@ -36,23 +37,17 @@ class FakeComfy(BaseHTTPRequestHandler):
         if self.path.startswith("/system_stats"):
             return self._send({"system": {"comfyui_version": "fake-0.0"}, "devices": [{"name": "FakeGPU"}]})
         if self.path.startswith("/history/"):
-            return self._send(
-                {
-                    "prompt_1": {
-                        "status": {"status_str": "success", "completed": True},
-                        "outputs": {
-                            "9": {
-                                "images": [
-                                    {"filename": "keyframe_00001_.png", "subfolder": "xpark", "type": "output"}
-                                ],
-                                "videos": [
-                                    {"filename": "agent_00001_.mp4", "subfolder": "xpark", "type": "output"}
-                                ],
-                            }
-                        },
-                    }
+            return self._send({
+                "prompt_1": {
+                    "status": {"status_str": "success", "completed": True},
+                    "outputs": {
+                        "9": {
+                            "images": [{"filename": "keyframe_00001_.png", "subfolder": "xpark", "type": "output"}],
+                            "videos": [{"filename": "agent_00001_.mp4", "subfolder": "xpark", "type": "output"}],
+                        }
+                    },
                 }
-            )
+            })
         if self.path.startswith("/view"):
             return self._send(b"FAKEBYTES", "video/mp4")
         return self._send({})
@@ -64,7 +59,6 @@ class FakeComfy(BaseHTTPRequestHandler):
             return self._send({"name": "reference.png", "subfolder": ""})
         if self.path.startswith("/prompt"):
             payload = json.loads(raw.decode())
-            # Force deterministic prompt_id used by the fake history.
             payload["prompt_id"] = "prompt_1"
             FakeComfy.submissions.append(payload)
             return self._send({"prompt_id": "prompt_1"})
@@ -72,7 +66,7 @@ class FakeComfy(BaseHTTPRequestHandler):
 
 
 def start(handler_cls, port=0):
-    srv = ThreadingHTTPServer(("127.0.0.1", port), handler_cls)
+    srv = server.Server(("127.0.0.1", port), handler_cls)
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
     return srv, thread
@@ -102,6 +96,7 @@ class BackendTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        server.Handler.api_token = ""
         cls.api.shutdown()
         cls.comfy.shutdown()
 
@@ -109,6 +104,13 @@ class BackendTest(unittest.TestCase):
         data = get_json(f"{self.api_url}/api/health")
         self.assertTrue(data["ok"])
         self.assertTrue(data["comfy"]["reachable"])
+
+    def test_capabilities(self):
+        caps = get_json(f"{self.api_url}/api/capabilities")
+        self.assertIn("image", caps)
+        self.assertIn("video", caps)
+        self.assertIn("compose", caps)
+        self.assertIn("reference_images", caps["video"]["inputs"])
 
     def test_image_job(self):
         created = post_json(
@@ -121,6 +123,7 @@ class BackendTest(unittest.TestCase):
                 "seed": 7,
                 "steps": 20,
                 "sampler": "euler",
+                "project_id": "p_test",
                 "reference_images": [
                     {"name": "hero.png", "data_url": "data:image/png;base64,aGVsbG8="}
                 ],
@@ -143,6 +146,7 @@ class BackendTest(unittest.TestCase):
                 "seed": 43,
                 "steps": 4,
                 "sampler": "res_multistep",
+                "project_id": "p_test",
             },
         )
         self.assertIn("job_id", created)
@@ -155,6 +159,63 @@ class BackendTest(unittest.TestCase):
             f"{self.api_url}/api/comfy/view?filename=agent_00001_.mp4", timeout=10
         ) as resp:
             self.assertEqual(resp.read(), b"FAKEBYTES")
+
+    def test_sse_event_stream(self):
+        # A completed job publishes events; the stream must replay them by seq.
+        post_json(f"{self.api_url}/api/videos/jobs", {"prompt": "x", "project_id": "p_sse"})
+        url = f"{self.api_url}/api/events?project_id=p_sse&since=0"
+        resp = urllib.request.urlopen(url, timeout=10)
+        try:
+            found = None
+            for _ in range(30):
+                line = resp.readline().decode("utf-8", "ignore")
+                if line.startswith("data:"):
+                    found = json.loads(line[5:].strip())
+                    break
+            self.assertIsNotNone(found)
+            self.assertIn("type", found)
+            self.assertEqual(found["project_id"], "p_sse")
+        finally:
+            resp.close()
+
+    def test_compose_requires_clips(self):
+        try:
+            post_json(f"{self.api_url}/api/productions/compose", {"clips": []})
+            self.fail("expected 400 for empty clips")
+        except urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 400)
+
+    def test_compose_graceful_without_ffmpeg(self):
+        try:
+            result = post_json(
+                f"{self.api_url}/api/productions/compose",
+                {"clips": ["/api/comfy/view?filename=agent_00001_.mp4&subfolder=xpark"]},
+            )
+            # ffmpeg is available in this environment: expect a served export URL.
+            self.assertTrue(result["url"].startswith("/api/exports/"))
+        except urllib.error.HTTPError as exc:
+            # No ffmpeg: the endpoint must degrade with a clear error, not crash.
+            self.assertEqual(exc.code, 503)
+            self.assertIn("ffmpeg_unavailable", exc.read().decode())
+
+    def test_auth(self):
+        server.Handler.api_token = "secret"
+        try:
+            try:
+                get_json(f"{self.api_url}/api/capabilities")
+                self.fail("expected 401 without token")
+            except urllib.error.HTTPError as exc:
+                self.assertEqual(exc.code, 401)
+            req = urllib.request.Request(
+                f"{self.api_url}/api/capabilities",
+                headers={"Authorization": "Bearer secret"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                self.assertEqual(resp.status, 200)
+            # health stays public even with auth enabled
+            self.assertTrue(get_json(f"{self.api_url}/api/health")["ok"])
+        finally:
+            server.Handler.api_token = ""
 
 
 if __name__ == "__main__":

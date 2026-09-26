@@ -10,6 +10,10 @@ export const config = {
 
   // Business API (FastAPI) — used by the "live" mode backend adapter.
   backendUrl: env.VITE_BACKEND_URL ?? "/api",
+  // Optional bearer token for the generation backend.
+  backendToken: env.VITE_API_TOKEN ?? "",
+  // Replayable event stream (SSE) from the backend.
+  sse: (env.VITE_SSE ?? "1") !== "0",
 
   // ComfyUI. In dev, /comfy is proxied by vite.config.ts.
   comfyUrl: env.VITE_COMFY_URL ?? "/comfy",
@@ -51,6 +55,17 @@ export const config = {
     acceptThreshold: Number(env.VITE_QC_ACCEPT ?? 0.85),
     maxRepairs: Number(env.VITE_QC_MAX_REPAIRS ?? 2),
   },
+
+  // Intelligent routing. Shadow mode records the model's proposal but keeps the
+  // deterministic rule action until it has been calibrated.
+  routing: {
+    shadow: (env.VITE_ROUTING_SHADOW ?? "1") !== "0",
+    auto: (env.VITE_ROUTING_AUTO ?? "0") !== "0",
+    minConfidence: Number(env.VITE_ROUTING_MIN_CONF ?? 0.5),
+  },
+
+  // Persist the agent flow to localStorage so a refresh does not lose the task.
+  persist: (env.VITE_PERSIST ?? "1") !== "0",
 } as const;
 
 export function isLive(): boolean {

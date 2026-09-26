@@ -12,6 +12,27 @@ export type AssetState =
   | "READY"
   | "FAILED";
 
+// Candidate lifecycle for generated/imported media. Only `accepted` assets
+// participate in the final cut; `discarded` ones stay in the recycle bin with
+// an auditable reason so they can be compared or regenerated later.
+export type CandidateStatus = "candidate" | "accepted" | "discarded";
+
+export type DiscardReason =
+  | "identity_drift"
+  | "action_incomplete"
+  | "composition_mismatch"
+  | "flicker"
+  | "deformation"
+  | "audio_issue"
+  | "other";
+
+export interface DiscardRecord {
+  reasonTag: DiscardReason;
+  note?: string;
+  at: string;
+  by: "auto" | "human";
+}
+
 export interface Asset {
   assetId: Id;
   projectId: Id;
@@ -24,6 +45,8 @@ export interface Asset {
   parentAssetIds?: Id[];
   metadata: Record<string, unknown>;
   state: AssetState;
+  status?: CandidateStatus;
+  discard?: DiscardRecord;
 }
 
 export interface AssetBinding {
@@ -86,6 +109,7 @@ export interface Shot {
   skillId?: Id;
   phase: ShotPhase;
   acceptedRunId?: Id;
+  acceptedAssetId?: Id;
   runIds: Id[];
   bindings: AssetBinding[];
 }
@@ -184,9 +208,15 @@ export type FlowEventType =
   | "agent.started"
   | "agent.message"
   | "decision.proposed"
+  | "decision.applied"
+  | "decision.fallback"
   | "skill.invoked"
   | "tool.progress"
   | "artifact.created"
+  | "candidate.created"
+  | "candidate.accepted"
+  | "candidate.discarded"
+  | "candidate.regenerated"
   | "quality.evaluated"
   | "step.completed"
   | "run.failed"
@@ -256,6 +286,29 @@ export interface DecisionAdvice {
   evidenceIds: Id[];
   acceptedByPolicy: boolean;
   fallback: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Intelligent routing
+// ---------------------------------------------------------------------------
+
+export type RouteAction =
+  | "reuse_imported"
+  | "reuse_clip"
+  | "image_conditioned"
+  | "generate"
+  | "repair"
+  | "human_review";
+
+export interface RouteDecision {
+  action: RouteAction;
+  reasons: string[];
+  confidence: number;
+  source: "rules" | "model";
+  shadow: boolean;
+  // What the decision model proposed (kept even in shadow mode for auditing).
+  modelAction?: RouteAction;
+  fallback?: RouteAction | null;
 }
 
 // ---------------------------------------------------------------------------

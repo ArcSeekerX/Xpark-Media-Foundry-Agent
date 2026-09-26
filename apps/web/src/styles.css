@@ -194,3 +194,32 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin: 6px 
 .studio-info { min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .studio-info b, .studio-info .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .studio-info b { font-size: 12.5px; }
+
+/* Candidate management & recycle bin */
+.cand-panel { display: flex; flex-direction: column; gap: 10px; }
+.cand-toolbar select {
+  border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  padding: 5px 8px; font-size: 12px; color: var(--ink);
+}
+.cand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.cand-tile {
+  position: relative; border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden; background: #eef2f8;
+}
+.cand-tile.accepted { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.cand-media { aspect-ratio: 4 / 5; }
+.cand-media img, .cand-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cand-badges { position: absolute; top: 5px; left: 5px; display: flex; gap: 4px; }
+.cand-badges .badge { font-size: 9px; padding: 1px 5px; }
+.cand-actions {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 4px;
+  padding: 12px 6px 5px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
+}
+.cand-actions .btn { padding: 3px 7px; font-size: 11px; }
+.cand-recycle { display: flex; flex-direction: column; gap: 5px; }
+.cand-row {
+  display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 8px; background: #fdf7f7; font-size: 11.5px;
+}
+.cand-thumb { width: 30px; height: 38px; border-radius: 6px; overflow: hidden; background: #eef2f8; flex-shrink: 0; }
+.cand-thumb img, .cand-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
