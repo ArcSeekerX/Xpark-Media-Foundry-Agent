@@ -6,6 +6,8 @@ import { planProject, planFromMaterials } from "../agent/planner";
 import { applySkill, bestSkill } from "../skills/router";
 import { skillById } from "../skills/registry";
 import { allowedActions, routeShot } from "../routing/router";
+import { runAgentChat } from "../agent/chat";
+import type { ToolContext } from "../agent/tools";
 import { config } from "../config";
 import { useSettings } from "../settings";
 import { EventLog } from "./events";
@@ -205,6 +207,7 @@ export interface AgentFlow {
     images: File[];
     params: ProductionParams;
   }) => Promise<void>;
+  chat: (text: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -1362,6 +1365,46 @@ export function useAgentFlow(): AgentFlow {
     [compose, emit, generateShot, say],
   );
 
+  // -------------------------------------------------------------------------
+  // 5. Agent chat: natural language -> foundry skills (tools)
+  // -------------------------------------------------------------------------
+  const chat = useCallback(
+    async (text: string) => {
+      const ctx: ToolContext = {
+        state: store.current,
+        getState: () => store.current,
+        actions: {
+          guide,
+          generateImage,
+          generateShot,
+          generateAll,
+          regenerateShot,
+          acceptCandidate,
+          discardCandidate,
+          restoreCandidate,
+          compose,
+          archive,
+          say: (t, role = "agent") => say(t, role),
+        },
+      };
+      await runAgentChat(text, ctx, adapters.text);
+    },
+    [
+      adapters.text,
+      acceptCandidate,
+      archive,
+      compose,
+      discardCandidate,
+      generateAll,
+      generateImage,
+      generateShot,
+      guide,
+      regenerateShot,
+      restoreCandidate,
+      say,
+    ],
+  );
+
   const reset = useCallback(() => {
     log.clear();
     try {
@@ -1401,6 +1444,7 @@ export function useAgentFlow(): AgentFlow {
     compose,
     archive,
     produceFromMaterials,
+    chat,
     reset,
   };
 }

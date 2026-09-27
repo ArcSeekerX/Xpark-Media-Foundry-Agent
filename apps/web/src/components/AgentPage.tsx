@@ -60,6 +60,7 @@ export function AgentPage() {
   const { state } = flow;
   const [activeShotId, setActiveShotId] = useState<string | undefined>();
   const [rightTab, setRightTab] = useState<"assets" | "production" | "runtime">("assets");
+  const [chatText, setChatText] = useState("");
 
   const activeShot = useMemo(
     () => state.shots.find((s) => s.shotId === activeShotId) ?? state.shots[0],
@@ -150,6 +151,37 @@ export function AgentPage() {
             </header>
             <div className="body">
               <AgentChat messages={state.messages} />
+              <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
+                <textarea
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (chatText.trim() && !state.busy) {
+                        void flow.chat(chatText);
+                        setChatText("");
+                      }
+                    }
+                  }}
+                  placeholder="和 Agent 对话：生成全部镜头 / 把第 2 个镜头重新生成 / 合成成片 / 列出已弃用资产…"
+                  className="settings-input"
+                  style={{ minHeight: 44, flex: 1, resize: "vertical" }}
+                />
+                <button
+                  className="btn small primary"
+                  disabled={state.busy || !chatText.trim()}
+                  onClick={() => {
+                    void flow.chat(chatText);
+                    setChatText("");
+                  }}
+                >
+                  发送
+                </button>
+              </div>
+              <div className="muted" style={{ marginTop: 6, fontSize: 10.5 }}>
+                技能：生图 · 生视频 · 剪辑合成 · 数字资产 · 智能路由
+              </div>
             </div>
           </section>
 

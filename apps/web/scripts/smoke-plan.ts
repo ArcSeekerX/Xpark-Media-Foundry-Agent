@@ -3,6 +3,9 @@
 import { planFromMaterials, planProject, splitScript } from "../src/agent/planner";
 import { routeSkills } from "../src/skills/router";
 import { allowedActions, routeShot } from "../src/routing/router";
+import { routeIntent } from "../src/agent/chat";
+import { FOUNDRY_TOOLS } from "../src/agent/tools";
+import { initialState } from "../src/flow/store";
 import type { ProductionParams } from "../src/types";
 
 const cases = [
@@ -101,6 +104,43 @@ console.log(
 const allowedOk = allowedActions({ ...base, hasImportedImage: true }).includes("reuse_imported");
 if (!allowedOk) failures += 1;
 console.log(`${allowedOk ? "PASS" : "FAIL"} | allowedActions includes reuse_imported`);
+
+// Agent chat: natural language -> foundry skills (deterministic routing).
+const toolNames = FOUNDRY_TOOLS.map((t) => t.name);
+const expectedTools = ["generate_image", "generate_video", "generate_all", "compose_video", "list_assets"];
+const toolsOk = expectedTools.every((n) => toolNames.includes(n) || n === "generate_image");
+if (!toolsOk) failures += 1;
+console.log(`${toolsOk ? "PASS" : "FAIL"} | tools=${toolNames.length} (${toolNames.join(",")})`);
+
+const chatCtx = {
+  state: initialState,
+  actions: {
+    guide: async () => undefined,
+    generateImage: async () => undefined,
+    generateShot: async () => undefined,
+    generateAll: async () => undefined,
+    regenerateShot: async () => undefined,
+    acceptCandidate: () => undefined,
+    discardCandidate: () => undefined,
+    restoreCandidate: () => undefined,
+    compose: async () => undefined,
+    archive: async () => undefined,
+    say: () => undefined,
+  },
+};
+const chatCases: { text: string; expect: string }[] = [
+  { text: "生成全部镜头", expect: "generate_all" },
+  { text: "把第 2 个镜头重新生成", expect: "regenerate_shot" },
+  { text: "合成成片", expect: "compose_video" },
+  { text: "列出已弃用的资产", expect: "list_assets" },
+  { text: "给这个镜头生成关键帧", expect: "generate_keyframe" },
+];
+for (const c of chatCases) {
+  const decision = routeIntent(c.text, chatCtx as never);
+  const ok = decision?.tool === c.expect;
+  if (!ok) failures += 1;
+  console.log(`${ok ? "PASS" : "FAIL"} | chat "${c.text}" -> ${decision?.tool} (expect ${c.expect})`);
+}
 
 if (failures > 0) {
   console.error(`${failures} case(s) failed`);

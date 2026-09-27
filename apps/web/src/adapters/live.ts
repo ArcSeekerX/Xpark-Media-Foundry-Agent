@@ -51,6 +51,50 @@ export class OpenAITextModel implements TextModel {
     };
     return data.choices?.[0]?.message?.content ?? "";
   }
+
+  // OpenAI-compatible function calling for the Agent chat.
+  async chatWithTools(
+    system: string,
+    messages: { role: string; content: string }[],
+    tools: unknown[],
+  ): Promise<{ content?: string; toolCalls?: { name: string; args: Record<string, unknown> }[] }> {
+    const r = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        temperature: 0.3,
+        messages: [{ role: "system", content: system }, ...messages],
+        tools,
+        tool_choice: "auto",
+      }),
+    });
+    if (!r.ok) throw new Error(`text model ${r.status}`);
+    const data = (await r.json()) as {
+      choices?: {
+        message?: {
+          content?: string;
+          tool_calls?: { function?: { name?: string; arguments?: string } }[];
+        };
+      }[];
+    };
+    const message = data.choices?.[0]?.message;
+    const toolCalls = (message?.tool_calls ?? [])
+      .map((call) => {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(call.function?.arguments ?? "{}") as Record<string, unknown>;
+        } catch {
+          args = {};
+        }
+        return { name: call.function?.name ?? "", args };
+      })
+      .filter((c) => c.name);
+    return { content: message?.content ?? "", toolCalls };
+  }
 }
 
 export class HttpDecisionPort implements DecisionPort {

@@ -63,6 +63,7 @@ export function AgentView() {
   const [activeShotId, setActiveShotId] = useState<string | undefined>()
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
   const [rightTab, setRightTab] = useState<'assets' | 'production' | 'runtime'>('assets')
+  const [chatText, setChatText] = useState('')
 
   useEffect(() => {
     const backend = flow.adapters.backend
@@ -247,6 +248,45 @@ export function AgentView() {
                     {m.text}
                   </div>
                 ))}
+              </div>
+              <div className="mt-3 flex items-end gap-2">
+                <textarea
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      if (chatText.trim() && !state.busy) {
+                        void flow.chat(chatText)
+                        setChatText('')
+                      }
+                    }
+                  }}
+                  placeholder="和 Agent 对话：生成全部镜头 / 把第 2 个镜头重新生成 / 合成成片 / 列出已弃用资产…"
+                  className="min-h-[44px] flex-1 resize-y rounded-lg border border-border bg-background p-2 text-xs outline-none focus-visible:border-ring"
+                />
+                <Button
+                  size="sm"
+                  disabled={state.busy || !chatText.trim()}
+                  onClick={() => {
+                    void flow.chat(chatText)
+                    setChatText('')
+                  }}
+                >
+                  发送
+                </Button>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+                <span>技能：</span>
+                <span>生图</span>
+                <span>·</span>
+                <span>生视频</span>
+                <span>·</span>
+                <span>剪辑合成</span>
+                <span>·</span>
+                <span>数字资产</span>
+                <span>·</span>
+                <span>智能路由</span>
               </div>
             </CardContent>
           </Card>

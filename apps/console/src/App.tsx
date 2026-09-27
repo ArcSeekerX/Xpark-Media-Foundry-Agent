@@ -7,7 +7,6 @@ import { AssetsView } from './components/views/AssetsView'
 import { OneClickStudio } from './components/views/OneClickStudio'
 import { SettingsView } from './components/views/SettingsView'
 import { SystemView } from './components/views/SystemView'
-import { ChatView } from './components/views/ChatView'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import type { GpuEvent, InferenceRequest } from './types/events'
@@ -129,15 +128,6 @@ function App() {
                   <span>系统监控</span>
                 </TabsTrigger>
                 <TabsTrigger
-                  value="chat"
-                  className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
-                >
-                  <svg className="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                  </svg>
-                  <span>在线对话</span>
-                </TabsTrigger>
-                <TabsTrigger
                   value="settings"
                   className="relative flex flex-col items-center justify-center gap-1 w-full rounded-lg text-zinc-400 data-active:text-[#76B900] data-active:bg-[#76B900]/[0.12] transition-colors hover:text-zinc-200 hover:bg-white/[0.03] text-[10px] leading-tight"
                 >
@@ -190,9 +180,6 @@ function App() {
                 <SettingsView />
               </TabsContent>
 
-              <TabsContent value="chat" className="flex-1 min-h-0 flex flex-col data-[state=inactive]:hidden">
-                <ChatView engines={metrics?.engines ?? []} />
-              </TabsContent>
             </main>
           </Tabs>
         </div>
