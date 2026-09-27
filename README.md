@@ -125,7 +125,7 @@ python3 apps/api/test_server.py
 | `VITE_MODE` | `live` | 默认真实接口；设 `mock` 仅用于无 GPU 离线演示（占位适配器） |
 | `VITE_BACKEND_URL` | `/api` | 业务后端地址；留空则直连 ComfyUI |
 | `VITE_COMFY_URL` | `/comfy` | ComfyUI 地址（直连模式） |
-| `VITE_IMAGE_WORKFLOW` | `/workflows/qwen_image_t2i.api.json` | ComfyUI 生图 API 工作流 |
+| `VITE_IMAGE_WORKFLOW` | `/workflows/qwen_image_t2i.api.json` | ComfyUI 生图 API 工作流（另提供 `qwen_image_2.1.api.json`，用于 Qwen-Image 2.1；需 ComfyUI 支持 2.1 的 VAE 与 qwen3vl 编码器） |
 | `VITE_IMAGE_WIDTH` / `VITE_IMAGE_HEIGHT` | 768 / 1024 | 关键帧尺寸 |
 | `VITE_IMAGE_STEPS` | 20 | 生图采样步数 |
 | `VITE_IMAGE_SAMPLER` | `euler` | 生图采样器 |
