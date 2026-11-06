@@ -1,0 +1,16 @@
+[Unit]
+Description=Xpark pipeline Feishu bridge (polls the pipeline chat :5100)
+After=network-online.target video-agent.service
+Wants=network-online.target video-agent.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin/xu/xfusion/video-agent
+Environment=HOME=/root
+Environment=PATH=/root/.nvm/versions/node/v26.4.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/admin/xu/xfusion/video-agent/.venv/bin/python scripts/feishu_bridge.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

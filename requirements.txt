@@ -1,3 +1,5 @@
-# Default local decision engine. Auto-installed by ComfyUI entrypoints that
-# pick up custom-node requirements.txt. Weights: see LAYA.md.
-laya>=0.3.5
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+python-multipart>=0.0.9
+websocket-client>=1.8

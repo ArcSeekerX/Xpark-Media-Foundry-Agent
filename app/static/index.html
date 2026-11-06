@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Xpark 数字资产生成流水线</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f2a33c'/%3E%3Cpath d='M8 16h5M19 16h5' stroke='%231a1206' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='3.6' fill='%231a1206'/%3E%3Ccircle cx='8' cy='16' r='2.2' fill='%231a1206'/%3E%3Ccircle cx='24' cy='16' r='2.2' fill='%231a1206'/%3E%3C/svg%3E">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem("xp-theme");
+    if (t !== "light" && t !== "dark") {
+      t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light" : "dark";
+    }
+    document.documentElement.dataset.theme = t;
+  } catch (e) {
+    document.documentElement.dataset.theme = "dark";
+  }
+})();
+</script>
+<link rel="stylesheet" href="/static/fonts/noto-sans-sc/index.css">
+<link rel="stylesheet" href="/static/style.css?v=19">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="url(#lg)"/>
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#f6b34f"/><stop offset="1" stop-color="#e88a1f"/>
+      </linearGradient></defs>
+      <path d="M8 16h5M19 16h5" stroke="#1a1206" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3.6" fill="#1a1206"/>
+      <circle cx="8" cy="16" r="2.2" fill="#1a1206"/>
+      <circle cx="24" cy="16" r="2.2" fill="#1a1206"/>
+    </svg>
+    <div class="brand-text">
+      <b>Xpark 数字资产生成流水线</b>
+      <span class="brand-sub">DIGITAL ASSET GENERATION PIPELINE</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <button id="theme-btn" class="theme-btn" title="切换白昼 / 黑夜模式" aria-label="切换白昼黑夜模式">
+      <svg class="sun" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="3.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 2.4v2M10 15.6v2M2.4 10h2M15.6 10h2M4.6 4.6l1.4 1.4M14 14l1.4 1.4M15.4 4.6 14 6M6 14l-1.4 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <svg class="moon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M16.5 12.4A7 7 0 0 1 7.6 3.5a7 7 0 1 0 8.9 8.9Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    </button>
+    <span id="comfy-status" class="status-chip checking" title="本地渲染引擎"><i></i><span>渲染引擎检测中…</span></span>
+    <span id="qwen-chip" class="status-chip checking" title="Qwen-Image 2.1 绘图引擎"><i></i><span>绘图引擎…</span></span>
+    <span id="queue-chip" class="mono-chip" title="GPU 渲染队列">队列 —</span>
+    <span id="vault-chip" class="mono-chip" title="资产库总量">资产 —</span>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="panel chat-panel" aria-label="主 Agent 对话">
+    <header class="panel-head">
+      <div class="who">
+        <div class="who-text">
+          <span id="chat-status">在线 · 说想法，我来出片</span>
+        </div>
+      </div>
+      <div class="chat-head-actions">
+        <button id="chat-history" class="btn ghost small" title="历史对话">历史</button>
+        <button id="chat-reset" class="btn ghost small">新对话</button>
+      </div>
+    </header>
+    <div id="history-pop" class="history-pop hidden">
+      <div class="history-pop-head">
+        <span>历史对话</span>
+        <button id="history-close" class="btn ghost small" aria-label="关闭历史对话">✕</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
+    </div>
+    <div id="chat-checklist" class="chat-checklist hidden"></div>
+
+    <div id="chat-list" class="chat-list">
+      <div id="chat-intro" class="chat-intro">
+        <div class="intro-eyebrow">XPARK · LOCAL GENERATION PIPELINE</div>
+        <h2>把想法交给流水线，<br><em>直接产出数字资产</em>。</h2>
+        <p>对话就是投料：先出分镜方案 → 生成参考图（Qwen-Image 2.1）→ 本地 MiniMax H3 逐条渲染画面与声音 → 自动抽帧质检，成片归档到右侧资产库。5~15 秒一条，信息没说全我会追问，说「直接生成」就开机。</p>
+        <div class="suggest-list">
+          <button data-suggest="雨夜便利店的悬疑小片，夜班店员在监控里看到另一个自己，写实电影感，5 秒竖屏">雨夜便利店悬疑 · 5s 竖屏</button>
+          <button data-suggest="清晨猫咪咖啡馆的治愈日常，阳光斜进来，猫在窗台打盹，日系动画质感，5 秒横屏">猫咪咖啡馆治愈日常 · 5s 横屏</button>
+          <button data-suggest="雪夜末班公交站，女孩把围巾给流浪猫，暖色治愈，5 秒横屏">雪夜公交站 · 5s 横屏</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="composer">
+      <div id="skill-pop" class="skill-pop hidden">
+        <div id="skill-pop-list" class="skill-pop-list"></div>
+        <div class="skill-pop-foot">↑↓ 选择 · Enter / 点击 添加 · Esc 关闭</div>
+      </div>
+      <div id="skill-chips" class="skill-chips hidden"></div>
+      <div id="attach-chip" class="attach-chip hidden"></div>
+      <div id="attach-chip-last" class="attach-chip last hidden"></div>
+      <div class="composer-box">
+        <button id="attach-btn" class="icon-btn" title="附带参考图（图生视频）">
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4 4.5h8.5A2.5 2.5 0 0 1 15 7v8.5H6.5A2.5 2.5 0 0 1 4 13z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8.4" r="1.3" fill="currentColor"/><path d="M4.8 13.2 8.2 10l2.2 2 1.7-1.5 2.4 2.3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+        <textarea id="chat-input" rows="1" placeholder="描述你想要的资产：主体、场景、氛围、风格…"></textarea>
+        <button id="chat-send" class="btn primary send">发送</button>
+      </div>
+      <div class="composer-hint">Enter 发送 · Shift+Enter 换行 · 可附一张图做首帧（图生视频）</div>
+      <div class="drag-hint">松开鼠标：把这一帧设为参考图，下一轮直接图生视频</div>
+      <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+    </footer>
+  </section>
+
+  <section class="panel assets-panel" aria-label="数字资产查看">
+    <header class="panel-head assets-head">
+      <div class="panel-switch" id="panel-switch" role="tablist">
+        <button class="pswitch active" data-panel="assets" role="tab">数字资产</button>
+        <button class="pswitch" data-panel="queue" role="tab">任务队列<i id="queue-badge" class="queue-badge hidden"></i></button>
+      </div>
+      <div class="assets-tools" id="assets-tools">
+        <span id="assets-summary" class="panel-sub">正在读取…</span>
+        <select id="asset-order" class="dialog-select slim" title="按时间排序">
+          <option value="desc">时间 新→旧</option>
+          <option value="asc">时间 旧→新</option>
+        </select>
+        <select id="asset-conv-filter" class="dialog-select slim" title="按会话筛选资产"></select>
+        <button id="assets-refresh" class="btn ghost small" title="刷新资产库">刷新</button>
+        <button id="assets-sync" class="btn ghost small" title="扫描外部资产目录并入库（文件保留原位置）">汇总</button>
+        <button id="assets-manage" class="btn ghost small" title="批量管理资产">管理</button>
+      </div>
+      <div class="assets-tools hidden" id="queue-tools">
+        <div class="tabs" id="queue-tabs" role="tablist">
+          <button class="tab active" data-status="all">全部</button>
+          <button class="tab" data-status="running,queued">进行中</button>
+          <button class="tab" data-status="succeeded">已完成</button>
+          <button class="tab" data-status="failed,cancelled">失败/取消</button>
+        </div>
+        <button id="queue-hypit" class="btn ghost small" title="用 hypit 工程构建讲解长片">讲解片</button>
+        <button id="queue-refresh" class="btn ghost small" title="刷新队列">刷新</button>
+      </div>
+    </header>
+    <div id="assets-grid" class="assets-grid"></div>
+    <div id="queue-list" class="queue-list hidden"></div>
+    <div id="assets-bulk" class="assets-bulk hidden">
+      <span id="bulk-count" class="bulk-info">已选 0 件</span>
+      <div class="bulk-actions">
+        <button id="bulk-select-all" class="btn ghost small">全选</button>
+        <button id="bulk-delete" class="btn danger small" disabled>删除所选</button>
+        <button id="bulk-cancel" class="btn ghost small">取消</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-labelledby="lb-title">
+  <div class="lightbox-backdrop" data-close></div>
+  <div class="lightbox-body">
+    <button class="lightbox-close" data-close aria-label="关闭">✕</button>
+    <div class="lightbox-media">
+      <div id="lightbox-media-slot"></div>
+      <button id="lb-prev" class="lb-nav prev" aria-label="上一个">‹</button>
+      <button id="lb-next" class="lb-nav next" aria-label="下一个">›</button>
+      <span id="lb-counter" class="lb-counter"></span>
+    </div>
+    <div class="lightbox-meta">
+      <div class="lb-kicker">DIGITAL ASSET</div>
+      <h3 id="lb-title"></h3>
+      <div id="lb-chips" class="lb-chips"></div>
+      <div class="lb-prompt-wrap">
+        <div class="lb-label">PROMPT</div>
+        <p id="lb-prompt" class="lb-prompt"></p>
+      </div>
+      <div class="lb-actions">
+        <button id="lb-video-ref" class="btn primary small hidden">以视频为参考重做</button>
+        <button id="lb-use-video" class="btn primary small hidden">用此图生成视频</button>
+        <button id="lb-edit" class="btn ghost small hidden">修复文字 / 去水印</button>
+        <button id="lb-post" class="btn ghost small hidden">加旁白 / 字幕</button>
+        <button id="lb-qc" class="btn ghost small">质检</button>
+        <button id="lb-feishu" class="btn ghost small">发送到飞书</button>
+        <a id="lb-download" class="btn ghost small" download>下载</a>
+        <button id="lb-delete" class="btn danger small">删除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="edit-dialog" class="confirm-mask hidden" role="dialog" aria-modal="true" aria-labelledby="edit-dialog-title">
+  <div class="confirm-backdrop" data-edit-close></div>
+  <div class="confirm-box frame-box">
+    <h4 id="edit-dialog-title">修复参考图（文字 / 水印）</h4>
+    <p>用 Qwen-Image 2.1 编辑模式重绘：保持构图风格不变，修掉乱码文字与水印。可自行补充要求。</p>
+    <textarea id="edit-prompt" class="dialog-area" rows="4"></textarea>
+    <div class="confirm-actions">
+      <button class="btn ghost small" data-edit-close>取消</button>
+      <button id="edit-submit" class="btn primary small">开始修复</button>
+    </div>
+  </div>
+</div>
+
+<div id="post-dialog" class="confirm-mask hidden" role="dialog" aria-modal="true" aria-labelledby="post-dialog-title">
+  <div class="confirm-backdrop" data-post-close></div>
+  <div class="confirm-box frame-box">
+    <h4 id="post-dialog-title">加旁白 / 字幕（后期合成）</h4>
+    <p>填写旁白文本自动生成语音与字幕；可压低原始 BGM。留空旁白则只调整 BGM 音量。</p>
+    <label class="dialog-label">旁白文本
+      <textarea id="post-text" class="dialog-area" rows="4" placeholder="例如：深夜的便利店，雨还在下……"></textarea>
+    </label>
+    <div class="dialog-row">
+      <label class="dialog-label">音色
+        <select id="post-voice" class="dialog-select"></select>
+      </label>
+      <label class="dialog-label">BGM 音量
+        <input id="post-bgm" type="range" min="0" max="100" value="15">
+        <span id="post-bgm-val" class="dialog-mono">15%</span>
+      </label>
+      <label class="dialog-check"><input id="post-burn" type="checkbox" checked> 烧录字幕</label>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn ghost small" data-post-close>取消</button>
+      <button id="post-submit" class="btn primary small">开始后期</button>
+    </div>
+  </div>
+</div>
+
+<div id="hypit-dialog" class="confirm-mask hidden" role="dialog" aria-modal="true" aria-labelledby="hypit-dialog-title">
+  <div class="confirm-backdrop" data-hypit-close></div>
+  <div class="confirm-box frame-box">
+    <h4 id="hypit-dialog-title">构建讲解长片（hypit）</h4>
+    <p>选择工程目录下的 run 源，流水线会执行 check → build → 导出 → 入库 → 飞书回传。全过程约 30 分钟起。</p>
+    <div id="hypit-list" class="hypit-list"><div class="queue-empty" style="margin:18px auto">读取工程列表…</div></div>
+    <div class="confirm-actions">
+      <button class="btn ghost small" data-hypit-close>取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="frame-dialog" class="confirm-mask hidden" role="dialog" aria-modal="true" aria-labelledby="frame-dialog-title">
+  <div class="confirm-backdrop" data-frame-close></div>
+  <div class="confirm-box frame-box">
+    <h4 id="frame-dialog-title">以视频为参考重做</h4>
+    <p>选择参考帧锁定画面，然后修改描述重新生成；起止画面保持不变，只重生成描述里变化的部分。</p>
+    <div class="frame-options">
+      <button class="frame-opt" data-frame="first"><b>首帧参考</b><span>以第一帧为参考重生成</span></button>
+      <button class="frame-opt" data-frame="last"><b>尾帧参考</b><span>以最后一帧为参考重生成</span></button>
+      <button class="frame-opt hot" data-frame="firstlast"><b>首尾帧锁定</b><span>锁定起止画面，重生成中间（推荐）</span></button>
+      <button class="frame-opt" data-frame="middle"><b>中间帧参考</b><span>以中间一帧为参考重生成</span></button>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn ghost small" data-frame-close>取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="confirm" class="confirm-mask hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+  <div class="confirm-backdrop" data-close></div>
+  <div class="confirm-box">
+    <h4 id="confirm-title">删除资产</h4>
+    <p id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button id="confirm-cancel" class="btn ghost small">取消</button>
+      <button id="confirm-ok" class="btn danger small">删除</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<script src="/static/app.js?v=20"></script>
+</body>
+</html>

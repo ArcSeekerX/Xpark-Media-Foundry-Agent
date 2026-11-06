@@ -1,0 +1,16 @@
+[Unit]
+Description=Qwen-Image 2.1 text-to-image service (:8601) for the Xpark pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=QWEN_IMAGE_DIR=/home/admin/xu/comfyui/qwen-image-2.1
+Environment=QWEN_IMAGE_PORT=8601
+ExecStart=/home/admin/xu/comfyui/venv/bin/python /home/admin/xu/xfusion/video-agent/scripts/qwen_image_server.py
+Restart=on-failure
+RestartSec=5
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

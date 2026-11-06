@@ -1,0 +1,15 @@
+[Unit]
+Description=Xpark Digital Asset Generation Pipeline - chat-driven generation (FastAPI, :5100)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin/xu/xfusion/video-agent
+Environment=VA_PORT=5100
+ExecStart=/home/admin/xu/xfusion/video-agent/.venv/bin/python -m app
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

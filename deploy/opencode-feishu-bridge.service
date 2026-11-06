@@ -1,0 +1,16 @@
+[Unit]
+Description=Xpark Feishu DM bridge (opencode general agent with thinking trace)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin/xu/xfusion/video-agent
+Environment=HOME=/root
+Environment=PATH=/root/.opencode/bin:/root/.nvm/versions/node/v26.4.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/admin/xu/xfusion/video-agent/.venv/bin/python scripts/opencode_bridge.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

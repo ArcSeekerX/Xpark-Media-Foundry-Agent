@@ -1,44 +1,5 @@
+.venv/
+data/
+.env
 __pycache__/
 *.pyc
-*.pyo
-*.safetensors
-*.ckpt
-*.gguf
-*.pt
-*.pth
-*.bin
-*.mp4
-*.wav
-*.webm
-*.gif
-*.log
-weights/
-h3_preconverted/
-output/
-temp/
-user/
-validation/
-
-# Local SDK environments and credentials
-.venv/
-.venv-jev/
-.env
-.env.*
-*.pem
-*.key
-
-# Frontend (apps/web, apps/console)
-apps/web/node_modules/
-apps/web/dist/
-apps/console/node_modules/
-apps/console/dist/
-*.tsbuildinfo
-
-# Tiny offline demo media used by the mock adapters (UI rendering without GPU)
-!apps/console/public/mock/
-!apps/web/public/mock/
-!apps/console/public/mock/*.mp4
-!apps/web/public/mock/*.mp4
-
-# Backend runtime data (exports/compose/manifests)
-apps/api/data/

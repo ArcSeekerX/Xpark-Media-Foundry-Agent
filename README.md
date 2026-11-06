@@ -1,636 +1,125 @@
-[简体中文](#xpark-media-foundry-agent) | [English](#english-documentation)
+# Xpark 数字资产生成流水线 · Digital Asset Generation Pipeline
 
----
+一个本地部署的「对话式数字资产生成流水线」：左边是主 Agent 对话框，右边是图片/视频数字资产查看模块。
+聊清楚想法后，Agent 产出结构化英文提示词，投递到本机渲染引擎（ComfyUI + MiniMax H3，画面+声音联合生成），
+成片自动入库到右侧数字资产库。
 
-# Xpark Media Foundry Agent
+Web 端口：**http://<host>:5100**
 
-Xpark Media Foundry Agent（`Xpark-Media-Foundry-Agent`）是一条视频数字资产流水线：把文档与图片素材批量制作成 1080P 动画解说视频资产，流程为 素材摄取 → 分镜脚本 → 逐片段生成 → 质检 → ffmpeg 拼接成片。生成层集成 MiniMax-H3 与 009jev native SLA / W4A4+VSA 两条加速路径，决策引擎 Laya（本地）/ OpenJev（llama.cpp）/ Jev（远程 API）逐层动态分配注意力 keep 率，显著降低算力与显存开销。
+## 功能
 
-## 数字资产流水线
+- **主 Agent 对话**：引导式需求澄清（每轮最多一个问题），信息足够即给方案卡；说「直接生成」自动提交渲染
+- **技能调用**：对话框输入 `/` 触发技能补全（↑↓/Enter 选择），选中后进入技能芯片；
+  发送时后端注入对应 SKILL.md 指令（每轮最多 3 个），消息与历史都带技能标签；
+  默认只暴露「图片/视频创作 + 审美」相关 10 个技能（hypit、hypit-comfyui-video、sound-director、
+  feishu-doc-glass-video、color-expert、theme-factory、design-review、frontend-design、hallmark、
+  impeccable-design-polish），可用 `VA_SKILLS_ALLOW` 调整，`all` 表示全部
+- **对话持久化**：会话与消息落库，刷新/重开自动恢复；「历史」面板可切换、删除对话
+- **任务队列视图**：数字资产 / 任务队列双视图；按状态筛选，查看每个任务的进度、参数、提示词、耗时与结果，支持停止 / 重试
+- **拖拽参考图**：从资产库把图片拖进对话框即设为参考图（图生视频）
+- **参考视频重做**：视频资产可「以视频为参考重做」——锁定首帧/尾帧/首尾帧/中间帧，改描述后重新生成（锁定起止、只改变化部分）
+- **飞书接入**：生成完成自动推送到飞书（视频带封面、图片成组、失败通知）；专属群「Xpark 数字资产流水线」里发消息/发图即可触发任务，回复与成片自动回传；「新对话」重置上下文
+- **参考图先行**：方案卡点「先生成参考图」或对话说「先出几张图」，用 Qwen-Image 2.1 一次生成 4 张候选（每张约 3 分钟）；
+  图库中打开任一参考图点「用此图生成视频」即走图生视频（H3 首帧）
+- **自动质检**：每条成片/参考图生成后自动抽帧送本地视觉模型（gemma3:4b）质检，判定通过/有瑕疵/未通过并给出问题说明；
+  资产卡片与灯箱展示质检结论，灯箱内可手动「质检」复检
+- **完整链路**：剧本方案 → 参考图 → 视频（H3 画声同出）→ 质检 → 归档 / 飞书回传
+- **数字资产查看**：视频 / 图片分栏展示（独立分区 + 计数），封面、时长、分辨率、提示词、下载；灯箱 ←/→ 按同类浏览，生成完成自动刷新
+- **按会话筛选资产**：资产工具条下拉可选择「当前会话 / 指定历史对话」，每个产物（含参考帧、修复、后期、讲解片）自动归属产生它的会话；「汇总」可扫描外部目录统一登记
+- **资产删除**：卡片悬浮一键删除、灯箱内删除、「管理」多选批量删除，均带应用内确认弹窗
+- **图生视频**：对话里可附一张参考图作为首帧，或使用已生成的参考图
+- **任务进度**：排队 / 生成进度 / 耗时 / 停止，全部在对话消息流里（参考图为「生成 N/M 张」，视频为渲染步数）
+- **资产导入**：`scripts/import_samples.py` 可把已有本地视频/图片登记为示例资产
+- **明暗双主题**：顶栏一键切换白昼 / 黑夜模式，首次访问跟随系统偏好，选择本地记忆
 
-```
-源素材 (docx / 图片集)
-  │ ① 素材摄取   抽取 word/media 与段落结构，按章节主线选图
-  ▼
-分镜脚本 (每图：旁白 + 动效脚本)
-  │ ② 脚本编排   1080P 模板、逐片段种子、顺序浮现动效
-  ▼
-片段生成 (H3 + 009jev/laya 决策加速)
-  │ ③ 批量生成   learning_video_1080p.api.json · gen_learning_video.py
-  ▼
-片段资产 (5 秒 · 1920×1080 · 24fps · 中文旁白)
-  │ ④ 质检/后期  抽帧 + ffprobe + 去水印 + ffmpeg concat
-  ▼
-成片 (数字资产)
-```
-
-| 阶段 | 载体 | 产物 |
-|---|---|---|
-| ① 素材摄取 | docx `word/media/`（`unzip`/`zipfile`）、段落结构 | 图片素材集（6–10 张示意图） |
-| ② 脚本编排 | 每图 `旁白`(≤45 字) + `动效脚本`，`PROMPT_TMPL` | 分镜脚本 `CLIPS` |
-| ③ 逐片段生成 | [learning_video_1080p.api.json](examples/learning_video_1080p.api.json)、[gen_learning_video.py](skills/learning-video/scripts/gen_learning_video.py) | 5 秒 1080P 动画片段 |
-| ④ 质检 | 抽头/中/尾 3 帧、`ffprobe` | 通过质检的片段 |
-| ⑤ 后期/交付 | `dewatermark.sh`（可选）、`concat_learn.sh` | 成片 mp4（1920×1080 · CRF 18） |
-
-### 快速开始（学习视频工厂）
-
-1. 部署 ComfyUI + MiniMax-H3（Docker / GB10 见 [DEPLOYMENT.zh.md](DEPLOYMENT.zh.md)）。
-2. 安装本仓库到 `custom_nodes/Xpark-Media-Foundry-Agent`，并准备决策引擎（默认本地 Laya，见 [LAYA.md](LAYA.md)）。
-3. 将文档图片放入 ComfyUI `input/`，填写三要素后运行 `python3 skills/learning-video/scripts/gen_learning_video.py 1 2 3`。
-4. 抽帧质检后，用 `skills/learning-video/scripts/concat_learn.sh` 拼接成片。
-5. 详细步骤、动效写法与质检清单见 [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) 与 [学习视频 Skill](skills/learning-video/SKILL.md)。
-
-### 流水线的生成引擎
-
-生成层由 MiniMax H3 + 决策引擎驱动的自适应稀疏注意力构成，按硬件与需求二选一：
-
-| 路径 | 节点 | 说明 | 文档 |
-|---|---|---|---|
-| **009jev native SLA（推荐）** | `H3JevNativeSLAPatch` | 普通模型 + native SLA，无需 W4A4 转换，逐层动态 keep | [009JEV.md](009JEV.md) |
-| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 预转换 + 固定/自适应 VSA | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
-
-决策引擎三选一，契约一致、可热切换（环境变量 `H3_DECISION_ENGINE`）：
-
-| 引擎 | 部署 | 说明 | 文档 |
-|---|---|---|---|
-| Laya（默认） | 进程内本地模型 | 322M 本地决策模型，离线免费 | [LAYA.md](LAYA.md) |
-| OpenJev | 本地 llama-server | GGUF 生成式决策，一问一答 | [OPENJEV.md](OPENJEV.md) |
-| Jev | 远程 TypeSafe API | 需 `TYPESAFE_API_KEY` | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
-
-实测性能（GB10，5 秒 4 步视频，热缓存）：
-
-| 引擎 | 耗时 | vs 基线 | SSIM vs 基线 |
-|---|---:|---:|---:|
-| 基线 | 530.2s | — | 1.0 |
-| Laya | 340.1s | −35.9% | 0.761 |
-| OpenJev | 400.1s | −24.5% | 0.760 |
-
-### 控制台：主 Agent 流程页（新增主模块）
-
-`apps/console/` 复用 Xpark-AI-Perf 前端框架，仅保留白天模式，含三个模块：
-
-| 模块 | 说明 |
-|---|---|
-| **主 Agent（默认）** | 一句话智能引导 → 场景/分镜 + 技能匹配 → 参考图导入/绑定 → 关键帧生图 → 视频生成与质检 → 修复闭环 → 剪辑拼接 → 素材归档；含**数字资产模块**与 **Agent 对话**（生图/生视频/剪辑/数字资产等能力经 skills 工具调用，系统提示词描述能力边界） |
-| **一键出片** | 输入 `.md`/`.txt` 文本与图片素材，设定比例/帧数/步数/采样器/种子/风格/旁白等参数，一键完成 分镜 → 逐镜生成 → 质检 → 自动剪辑 并输出成片 |
-| 系统监控 | GPU/CPU/内存/磁盘/网络与推理引擎指标、图表、远程节点面板 |
-| **设置** | 运行模式、本地/外部模型接口、生图/生视频默认参数与分辨率、质检与路由、素材与成片存储路径；设置实时生效并持久化 |
-
-监控与对话接口可暂不接入：内置 mock 层（`src/mock/metrics.ts` 合成指标、`src/mock/chat.ts` 合成 SSE 回复）。接入真实监控后端时设 `VITE_MOCK=0` 与 `VITE_BACKEND_URL`。
+## 快速开始
 
 ```bash
-cd apps/console
-PATH=/opt/node22/bin:$PATH npm install   # Vite 8 / rolldown 需 Node >= 20
-PATH=/opt/node22/bin:$PATH npm run build
-PATH=/opt/node22/bin:$PATH npm run preview   # http://0.0.0.0:5000
+cd /home/admin/xu/xfusion/video-agent
+cp .env.example .env        # 填写文本模型 endpoint/key
+./run.sh                    # 首次自动创建 .venv 并安装依赖
+# 打开 http://127.0.0.1:5100
 ```
 
-### 生成后端与前后端对接（apps/api）
-
-`apps/api/server.py` 是一个**零依赖**（仅 Python 标准库）的业务后端，为控制台/前端提供生图与生视频任务接口，浏览器不再直连 ComfyUI：
-
-| 接口 | 说明 |
-|---|---|
-| `GET /api/health` | 后端与 ComfyUI 健康状态（公开） |
-| `GET /api/capabilities` | 模型能力表（参考图上限、fps、ffmpeg 可用性） |
-| `GET /api/events?project_id=&since=` | SSE 事件流（seq 游标 + id 去重 + keep-alive） |
-| `GET /api/comfy/view?filename=&subfolder=&type=` | 代理 ComfyUI 产物（图片/视频） |
-| `GET /api/exports/{name}` | 下载/播放后端合成的成片 |
-| `POST /api/images/jobs` | 提交文生图（默认 Qwen Image 2.1 7B 模板），可携带参考图 |
-| `GET /api/images/jobs/{id}` | 查询生图任务与产物 |
-| `POST /api/videos/jobs` | 提交 MiniMax H3 参考生视频任务 |
-| `GET /api/videos/jobs/{id}` | 查询生视频任务与产物 |
-| `POST /api/productions/compose` | ffmpeg 合成已采用片段；无 ffmpeg 时返回 503，前端降级为片段预览 |
-| `POST /api/judge` | 质检：ffprobe 确定性技术检查；无视觉模型时返回 `uncertain` 并转人工复核 |
-| `POST /api/projects/{id}/archive` | 归档：写入并返回 manifest 记录 |
-
-默认走真实接口（`VITE_MODE` 默认 `live`）。真实链路下的明确降级：ComfyUI 未运行时任务返回 `503 comfy_unavailable`；无 ffmpeg 时合成返回 `503 ffmpeg_unavailable`；未接入视觉理解模型时质检返回 `human_review`（不伪造分数）。仅在需要无 GPU 离线演示时设 `VITE_MODE=mock`。
+作为常驻服务（推荐）：
 
 ```bash
-# 启动生成后端（默认连接 http://127.0.0.1:8188 的 ComfyUI）
-python3 apps/api/server.py --port 8080
-# 可选：启用鉴权（Bearer 或 SSE ?token=）与 CORS 白名单
-API_TOKEN=secret ALLOWED_ORIGINS=http://localhost:5173 python3 apps/api/server.py
-# 零依赖自测（内置假 ComfyUI，无需 GPU / 模型，含 SSE/鉴权/能力/合成降级）
-python3 apps/api/test_server.py
+sudo cp deploy/video-agent.service /etc/systemd/system/
+sudo cp deploy/qwen-image.service /etc/systemd/system/   # Qwen-Image 2.1 绘图引擎
+sudo cp deploy/feishu-bridge.service /etc/systemd/system/ # 飞书消息触发桥
+sudo cp deploy/opencode-feishu-bridge.service /etc/systemd/system/ # 私聊通用智能体桥
+sudo systemctl daemon-reload
+sudo systemctl enable --now video-agent qwen-image feishu-bridge opencode-feishu-bridge
 ```
 
-前端在 `live` 模式下默认通过 `VITE_BACKEND_URL`（默认 `/api`）调用该后端。把 `VITE_BACKEND_URL` 设为空字符串时回退为浏览器直连 ComfyUI（走 `VITE_COMFY_URL`，开发服务器已代理 `/comfy`）。
+> 飞书桥轮询专属群（`VA_FEISHU_CHAT`）及附加会话（`VA_FEISHU_EXTRA_CHATS`，
+> 逗号分隔），把文字/图片转成流水线会话；任务完成由 worker 按 `job.feishu_target`
+> 回传（web 触发的任务发给 `VA_FEISHU_TARGET`）。依赖 lark-cli（node），服务环境已注入 node PATH。
+>
+> 私聊桥（`scripts/opencode_bridge.py`）轮询机器人 P2P 会话（`VA_OPENCODE_CHAT`），
+> 每条消息交给 `opencode run`（通用智能体）：转发思考/工具执行过程与最终回复，
+> 「/new」开新会话。依赖 opencode CLI（`VA_OPENCODE_BIN`，默认 `/root/.opencode/bin/opencode`）。
 
-生图 / 视频相关环境变量：
+> 绘图引擎使用宿主机 venv `/home/admin/xu/comfyui/venv`（diffusers ≥0.41 + transformers ≥5）
+> 加载 `/home/admin/xu/comfyui/qwen-image-2.1`，模型 CPU offload，可与 ComfyUI 渲染共存。
+
+## 配置（.env / 环境变量）
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `VITE_MODE` | `live` | 默认真实接口；设 `mock` 仅用于无 GPU 离线演示（占位适配器） |
-| `VITE_BACKEND_URL` | `/api` | 业务后端地址；留空则直连 ComfyUI |
-| `VITE_COMFY_URL` | `/comfy` | ComfyUI 地址（直连模式） |
-| `VITE_IMAGE_WORKFLOW` | `/workflows/qwen_image_t2i.api.json` | ComfyUI 生图 API 工作流（另提供 `qwen_image_2.1.api.json`，用于 Qwen-Image 2.1；需 ComfyUI 支持 2.1 的 VAE 与 qwen3vl 编码器） |
-| `VITE_IMAGE_WIDTH` / `VITE_IMAGE_HEIGHT` | 768 / 1024 | 关键帧尺寸 |
-| `VITE_IMAGE_STEPS` | 20 | 生图采样步数 |
-| `VITE_IMAGE_SAMPLER` | `euler` | 生图采样器 |
-| `VITE_IMAGE_CFG` | 4 | 生图 CFG |
-| `VITE_IMAGE_ENABLED` | `1` | 设为 `0` 关闭生图步骤 |
-| `VITE_API_TOKEN` | 空 | 业务后端 Bearer token（对应后端 `API_TOKEN`） |
-| `VITE_SSE` | `1` | 设为 `0` 关闭 SSE 事件流接入 |
-| `VITE_ROUTING_SHADOW` | `1` | 智能路由影子模式：记录模型建议但执行规则 |
-| `VITE_ROUTING_AUTO` | `0` | 设为 `1` 关闭影子，采用通过校验的模型动作 |
-| `VITE_ROUTING_MIN_CONF` | `0.5` | 采用模型动作的最小置信度 |
-| `VITE_PERSIST` | `1` | 设为 `0` 关闭 localStorage 流程持久化 |
-| `VITE_IMPORTS_DIR` / `VITE_GENERATED_DIR` / `VITE_EXPORTS_DIR` | `imports` / `generated` / `exports` | 素材/产物/成片目录的默认值（可在设置页修改并同步到后端） |
+| `VA_PORT` | `5100` | Web 端口 |
+| `VA_COMFY_BASE` | `http://127.0.0.1:8188` | 本机 ComfyUI（MiniMax H3，需已加载 H3 模型与 LoRA） |
+| `VA_QWEN_IMAGE_URL` | `http://127.0.0.1:8601` | Qwen-Image 2.1 绘图服务 |
+| `VA_IMAGE_COUNT` / `VA_IMAGE_STEPS` | `4` / `20` | 参考图批量张数 / 采样步数 |
+| `VA_TEXT_BASE` / `VA_TEXT_MODEL` / `VA_TEXT_API_KEY` | opencode-go 网关 / `deepseek-v4.1-flash` | Agent 大脑，任意 OpenAI 兼容接口 |
+| `VA_TEXT_HEADERS` | `{}` | 额外请求头（JSON 对象；opencode-go 网关需要 `x-opencode-session`） |
+| `VA_RENDER_TIMEOUT` | `7200` | 单条渲染超时（秒） |
+| `VA_DATA_DIR` | `./data` | SQLite 与资产文件目录 |
 
-后端存储路径环境变量：`XPARK_DATA_DIR`（默认 `apps/api/data`）、`XPARK_IMPORTS_DIR`、`XPARK_GENERATED_DIR`、`XPARK_EXPORTS_DIR`；运行时可用 `POST /api/settings` 更新，`GET /api/settings` 读取。
+## API
 
-主 Agent 流程：一句话 → 场景 / 分镜 / 技能 → **参考图导入与绑定（优先复用）→ 缺素材时生成关键帧** → 视频生成（携带参考图）→ 质检 → 修复 → 剪辑 → 归档。导入的参考图会随渲染请求上传到后端 / ComfyUI，用作文生视频的角色条件；被决策端口判定为 `prefer_imported` 时优先复用导入素材、跳过生图。
-
-### 一键出片
-
-`一键出片` 是控制台的新模块，面向「已有素材直接成片」的场景：
-
-1. 导入 `.md` / `.markdown` / `.txt` 文本素材与图片素材（可多选、可拖拽；图片按顺序对应镜头）。
-2. 设定参数：画面比例（9:16 / 16:9 / 1:1）、片段帧数、采样步数、采样器、随机种子、最多镜头数、风格描述、是否生成旁白、是否自动剪辑。
-3. 点击「一键出片」：后端/前端将文本切分为分镜节拍、按图绑定首帧、逐镜生成并质检，最后自动剪辑输出成片（`state.finalAsset`）。
-4. 无素材时可点「载入示例素材」快速体验。
-
-参数会覆盖技能与配置默认值，贯穿关键帧生图与视频渲染（分辨率、帧数、步数、采样器、种子、风格/旁白提示词）。
-
-### 设置模块
-
-控制台新增「设置」页，统一管理运行时配置（`apps/console/src/foundry/settings.ts`，`config` 为其实时 Proxy，改动即时作用于适配器与流程）：
-
-| 分组 | 配置项 |
-|---|---|
-| 运行模式与接口 | `mock/live`、业务后端地址与 Token、ComfyUI 地址、SSE、本地持久化 |
-| 文本与决策模型 | 文本模型地址/模型名/API Key（OpenAI 兼容）、决策引擎（mock/Laya/Jev）与端口地址 |
-| 生图默认参数 | 启用开关、工作流 JSON、宽×高、步数、采样器、CFG |
-| 生视频默认参数 | 宽×高、帧数、步数、采样器 |
-| 质检与路由 | 验收阈值、最大修复次数、路由影子/自动、最小置信度 |
-| 素材与成片存储 | 导入素材目录、生成产物目录、成片导出目录（可一键同步到后端 `POST /api/settings`） |
-
-- 设置自动保存到浏览器本地（`localStorage`），并可「重置默认」。
-- 「测试连接」可分别探测业务后端、ComfyUI、文本模型与决策端口。
-- 环境变量仍是默认值来源，设置页覆盖后即时生效。
-
-### 媒体渲染说明
-
-- mock 模式下，生图返回内联 SVG 占位图；生视频返回内置示例 `public/mock/sample.mp4`，因此**无需后端与 GPU 也能看到图片/视频正确渲染**。
-- live 模式下，后端产物的相对地址（`/api/comfy/view?...`）会按 `VITE_BACKEND_URL` 解析为可访问 URL；`VITE_BACKEND_URL` 配为绝对地址（如 `http://host:8080/api`）时会自动补全后端 origin，避免预览 404。
-- 前端预览对图片/视频自动切换 `<img>` / `<video>`，并在成片面板提供「打开成片」入口。
-
----
-
-## 生成引擎详解：W4A4 + Streaming VSA
-
-以下为 FC1 W4A4 + Streaming VSA 路径的安装、一次性转换、工作流与验证说明. **已在 ComfyUI v0.36.0 上完成安装与实际生成的确认.** 只要准备好兼容的 ComfyUI 和所需模型，即可完成兼容性检查、节点配置与预转换. 不会自动下载模型.
-
-### 安装前需要了解的事项
-
-| 项目 | 要点 |
-|---|---|
-| SSD 额外容量 | 转换缓存 **约 5.79 GB（5.39 GiB）**. 原始模型，Text Encoder，VAE，输出视频等还需另行占用空间. |
-| 复用已有缓存 | 指定 `-CacheSource`. 同一卷内的硬链接几乎不会为缓存增加额外占用；跨卷则会复制. |
-| 本仓库新增的节点 | **4 个（本实验分支）**：`H3V2PreconvertedLoader`，`H3V2StreamingVSAPatch`，`H3V2JevAdaptiveVSAPatch`，`H3JevNativeSLAPatch`（009jev）. |
-| 外部节点依赖 | KJNodes 和 MotionCache-FastVAE **共 2 个包**. 未安装时可用 `-InstallDependencies` 补齐缺失部分. 各包中还包含本工作流以外的节点. |
-
-### ComfyUI v0.36.0 上的实测结果
-
-2026-09-20，GB10 DGX Spark，单次运行. 参数为 1024×1792，124 帧，24fps，4 steps，seed 43，res_multistep/simple，Sigma Shift 12/3，ChunkFFN 4，VSA keep 5%，FastVAE batch 2.
-
-| 指标 | 实测结果 |
-|---|---:|
-| 生成时间（含模型加载） | **209.233 秒（约 3 分 29 秒）** |
-| GPU 使用量最大观测值 | **11,479 MiB** |
-| 进程 RAM 峰值（峰值 RSS） | **11,610.7 MiB** |
-| 输出验证 | 含音频，124 帧，24fps，FFmpeg 全部解码成功 |
-| 中断/重跑 | 无 |
-
-GPU 使用量为每 60 秒间隔及完成时的采样值，并非瞬时峰值. 本次为单次兼容性确认，不是与其他方式的速度对比或画质评估. 由于复用了已通过全部 SHA-256 校验的已有缓存，本次确认未执行全新的 50 层转换和依赖节点的全新安装. 详情请参阅 [VALIDATION.md](VALIDATION.md).
-
-本目录的内容可以直接作为 GitHub 仓库的根目录发布.
-其他评估文件夹，对旧版本的引用，实验/失败方案以及 profiling 用代码均非运行所需.
-不附带模型，已转换权重，参考图像和输出视频.
-
-## 构成
-
-- `H3V2PreconvertedLoader`：在原始 INT8 模型的 CPU state_dict 上叠加 50 层 FC1 W4A4 shard，构建标准 ModelPatcher. 输出 MODEL 和 cache 连接.
-- `H3V2StreamingVSAPatch`：将预先保存的 INT8 Gate 保留在 CPU，仅把当前 block 的 Gate 传输到 GPU. 固定 plan 的 padding 判定只在 CPU 上计算一次.
-- `convert.py`：将现有 INT8 ConvRot FC1 → 还原为 native ConvRot 兼容的 BF16 → Plain W4A4. 同时预先保存 Gate.
-- GUI/API workflow：相同的节点，设置与引用顺序. GUI 版可直接拖放到 ComfyUI.
-
-FC2 保持 INT8 不变. 不修改 QKV，Attention kernel，Gate 的 INT8 计算公式，ChunkFFN，FastVAE，sampler / scheduler. 不使用 SVDQuant.
-不会全局替换 ComfyUI 原生类或现有 custom node. 节点 ID 与旧版不同，因此可以共存. 但请勿在同一个 MODEL 上重复叠加旧版 VSA 和 v2 VSA.
-
-## 所需环境
-
-2026-09-20：已在 **ComfyUI 0.36.0，Python 3.13.13，PyTorch 2.14.0+cu130，comfy-kitchen 0.2.34，comfy-aimdo 0.5.5** 上确认安装和 1024×1792 的实际生成. GB10 DGX Spark 上含模型加载共 209.233 秒（单次）. 详情请参阅 [VALIDATION.md](VALIDATION.md).
-
-首次验证环境：GB10 DGX Spark，Python 3.13.14，PyTorch 2.13.0+cu130，comfy-kitchen 0.2.33，comfy-aimdo 0.5.2.
-ComfyUI 验证 commit 为 `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`.
-详细的文件指纹记录在 [compatibility.json](compatibility.json) 中.
-仅凭相同的版本号显示无法保证 GPU 二进制兼容性，因此请运行后述的 `--check`.
-
-所需 API：
-
-- ComfyUI：`comfy.quant_ops.QUANT_ALGOS['convrot_w4a4']`，native quantized state_dict loader，`comfy_extras.nodes_sparse_attention`.
-- comfy-kitchen：`TensorCoreConvRotW4A4Layout`，CUDA `cutlass_int4_dequant`，`sol_attn_chunked`，`int8_linear`.
-- 在该验证版 kitchen 中，native ConvRot INT4 的执行路径取决于架构；不受支持的设置会被排除在支持范围之外并停止. **实测对象仅限 GB10 DGX Spark**. 其他 GPU 请在 `--check` 之外再通过实际生成确认.
-- [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes)：`MiniMaxChunkFeedForward`.
-- [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE)：`MiniMaxH3FastVAEDecode`.
-- `torch` / `safetensors` 使用与 ComfyUI 相同 Python 环境中的版本.
-
-安装与一次性转换在 **DGX OS / Linux** 上使用 ComfyUI 自带的 Python 执行 `convert.py`（见下方“安装与一次性转换”）. 该工具不会自动更新 ComfyUI 本体、PyTorch、comfy-kitchen，也不会下载模型；存在缺失 API 时会停止.
-
-完成后请重启 ComfyUI，并将附带 GUI 工作流中的参考图像换成自己的图像. 如果模型放在子文件夹中，也请同时在各 loader 中选择.
-
-## 模型
-
-以下是附带 workflow 中使用的文件名. Gate 不作为普通 LoRA 应用.
-
-| 用途 | 文件 | ComfyUI 内的存放位置 / 发布来源 |
+| 方法 | 路径 | 说明 |
 |---|---|---|
-| Diffusion | `minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors` | `models/diffusion_models/` · [MATLOWAI](https://huggingface.co/MATLOWAI/minimax-h3-fused-turbo-int8-convrot) |
-| VSA Gate | `fasth3_vsa_gate.safetensors` | 转换时通过路径指定，[barelymining](https://huggingface.co/barelymining/ComfyUI-MiniMax-H3-FastVideo) |
-| Text encoder | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `models/text_encoders/` · [Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
-| Video VAE | `minimax_h3_video_vae_int8_convrot.safetensors` | `models/vae/` · [Kijai](https://huggingface.co/Kijai/MiniMax-H3-experimental) |
-| Audio VAE | `minimax_h3_audio_vae_fp32.safetensors` | `models/vae/` · [Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
+| `POST` | `/api/chat` | 一轮对话 `{conversation_id?, content, attachment_asset_id?, skills?}` → `{conversation_id, reply, checklist, proposal, job}` |
+| `GET` | `/api/skills` | 已安装技能列表（名称 + 描述，来自 `VA_SKILLS_DIR`） |
+| `GET` | `/api/conversations` · `/api/conversations/{id}` | 历史对话列表 / 会话详情（含消息、清单、待确认方案） |
+| `DELETE` | `/api/conversations/{id}` | 删除对话及其消息 |
+| `POST` | `/api/jobs` | 直接创建渲染任务 `{title, prompt, duration_s, aspect, first_frame_asset_id}` |
+| `POST` | `/api/images` | 创建参考图任务 `{title, prompt, count, aspect}`（Qwen-Image 2.1 批量） |
+| `GET` | `/api/jobs` | 任务列表（`?limit=&status=queued,running`）+ 各状态计数 |
+| `GET` | `/api/jobs/{id}` | 任务详情 |
+| `POST` | `/api/jobs/{id}/cancel` | 排队中取消；渲染中向 ComfyUI 发 interrupt |
+| `POST` | `/api/jobs/{id}/retry` | 重试失败/已取消的任务（按原参数重新入队） |
+| `GET` | `/api/assets` | 资产列表（`?kind=video\|image`） |
+| `POST` | `/api/assets/upload` | 上传参考图（multipart `file`） |
+| `GET` | `/api/assets/{id}/file` · `/poster` | 媒体文件（支持 Range）/ 视频封面 |
+| `POST` | `/api/assets/{id}/frame` | 视频抽帧 `{position: first\|last\|middle\|秒数}` → 新图片资产 |
+| `POST` | `/api/assets/{id}/feishu` | 手动把资产推送到飞书（默认接收人） |
+| `DELETE` | `/api/assets/{id}` | 删除资产 |
+| `GET` | `/api/status` | ComfyUI 在线状态与 GPU 队列 |
 
-不需要 BF16/FP16 原始模型. 转换工具以上述 INT8 ConvRot 的 50 层，形状和键名为前提，结构不同则拒绝.
-原始 Diffusion 模型在生成时仍然需要，用于读取 FC1 以外的权重. 仅靠转换后的缓存无法运行.
-附带 workflow 中不使用额外的 Turbo/FastH3 LoRA.
+## 架构
 
-## 安装与一次性转换
+```
+app/
+  api.py       FastAPI 路由（chat / jobs / assets / status，Range 文件服务）
+  agent.py     对话 Agent：系统提示词 + 确定性钳制（时长/画幅正则、开机意图、兜底提示词）
+  llm.py       OpenAI 兼容文本模型客户端 + 健壮 JSON 提取
+  worker.py    单卡串行渲染 worker：补丁 H3 工作流 → 提交 → ws 进度 → 下载 → 封面 → 入库
+  comfy.py     ComfyUI HTTP/WS 客户端（submit / history / view / interrupt / progress）
+  store.py     SQLite：assets / jobs；文件存 data/assets/<id>/
+  config.py    环境配置
+workflows/h3_t2v.api.json   MiniMax H3 文生视频（含音频）工作流模板
+app/static/    index.html + style.css + app.js（无构建、无框架）
+```
 
-使用 **ComfyUI 自带的 Python** 执行 `convert.py` 完成检查与一次性转换. 以下是希望手动执行时的步骤.
+生成规格：24 fps，帧数贴齐 17k+5 网格（124~362，约 5~15 秒），
+画幅 16:9 → 1344×768，9:16 → 768×1344，1:1 → 1024×1024；单条渲染约 10~15 分钟。
 
-1. 将本仓库整体放置到 `ComfyUI/custom_nodes/Xpark-Media-Foundry-Agent/`.
-2. 使上述模型和外部节点可用. 为避免正在运行的生成任务与转换争抢 GPU，请在生成结束后再进行转换.
-3. 使用 **ComfyUI 自带的 Python** 进行确认与转换. 以下为 DGX OS / Linux 示例.
+## 运维
 
 ```bash
-H3_PYTHON=/path/to/ComfyUI/venv/bin/python
-H3_ROOT=/path/to/ComfyUI
-H3_CONVERT="$H3_ROOT/custom_nodes/Xpark-Media-Foundry-Agent/convert.py"
-
-# 耗时数秒的 native INT4 / CPU offload / 重新加载到 GPU 确认. 不生成文件.
-"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" --check --gpu 0
-
-# 依次预转换 50 层. 输出目录请指定一个不存在的新目录.
-"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" \
-  --comfy-root "$H3_ROOT" \
-  --model "$H3_ROOT/models/diffusion_models/minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors" \
-  --gate "$H3_ROOT/models/loras/fasth3_vsa_gate.safetensors" \
-  --output "$H3_ROOT/models/h3_preconverted/fc1_gate" --gpu 0
-
-# 复制后或怀疑损坏时，对全部缓存进行 SHA-256 验证.
-"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" \
-  --verify "$H3_ROOT/models/h3_preconverted/fc1_gate"
+journalctl -u video-agent -f          # 服务日志
+tail -f /tmp/opencode/video-agent.log # 手动运行时的日志
+sqlite3 data/video_agent.db '.tables' # 数据检查
 ```
-
-`--gpu` 仅用于转换进程的 CUDA 选择. 不会改变 ComfyUI 通常的 GPU 设置.
-在 DGX OS / Linux 上，将 `H3_PYTHON` 指向 ComfyUI 使用的 Python 解释器即可.
-
-所需的额外磁盘空间约为 **5.8 GB**（FC1 约 3.86 GB + Gate 约 1.93 GB）. 由于内存还要用于整个模型，Text Encoder 和 VAE，需要足够的统一内存承载全部权重. GB10 DGX Spark 的统一内存可满足该需求，运行时模型 staging 约为 16GiB.
-转换时不会让全部 50 层常驻 GPU，而是逐层进行保存和 GPU 往返验证.
-
-完成时会显示 `COMPLETE: FC1 50/50 + Gate 50/50`，并在最后写入 `manifest.json`.
-不会覆盖或删除已有输出目录. 中途失败时，会保留未完成的目录并停止. 请修复原因后，使用另一个新的输出目录重新执行.
-
-## 运行 Workflow
-
-### 更改稀疏率
-
-修改 **“H3 v2 Streaming VSA (Preconverted Gate)”节点的 `keep_percent`**. 该值不是削减率，而是稀疏 attention 中保留的比例.
-
-| `keep_percent` | 保留率 | 目标区域的估算削减率 |
-|---:|---:|---:|
-| 5（初始值） | 5% | 95% |
-| 10 | 10% | 90% |
-| 20 | 20% | 80% |
-
-值越小越稀疏. 设置范围为 0.1–100. 文本，参考图等 prefix 保护区域会单独处理，因此表中的比例并非整个模型计算量的削减率. **更改时无需重新转换权重**. 修改数值后重新生成即可.
-
-- **GUI:** [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json)
-- **API:** [workflows/H3_Streaming_v2.api.json](workflows/H3_Streaming_v2.api.json)
-
-重启 ComfyUI，加载 GUI 版工作流，将 Reference 1/2/3 替换为自己的图像（按全身，上半身，脸部的顺序）.
-`cache_directory=h3_preconverted/fc1_gate` 是**相对于 ComfyUI/models 的相对路径**. 也可以指定绝对路径.
-将 Loader 的 `cache` 输出连接到 VSA 节点的 `cache` 输入. 请将模型名，缓存，workflow 作为一组进行管理.
-
-推荐启动选项为 `--disable-comfy-compiler`. 测量环境中还使用了 `--disable-pinned-memory`.
-即使在该选项下，本节点的 Gate 也会显式尝试 pin；失败时保留普通 CPU tensor.
-
-附带设置：**832×1408，124 frames，24 fps，seed 43，4 steps，res_multistep / simple，Sigma Shift 12/3，ChunkFFN 4，VSA keep 5%，FastVAE batch 2**.
-输出位置为 ComfyUI 标准的 `output/H3_Streaming_v2_*.mp4`.
-
-API 版与 GUI 用 JSON 不同，需要以 `{"prompt": <API JSON>, "client_id": "..."}` 的形式提交给标准的 ComfyUI `/prompt` 接口.
-使用 API 时，也需要提前将图像放入 ComfyUI 的 input 目录，并修改 3 个 LoadImage 的文件名.
-示例使用的是通用的参考说明. 由于评估时使用的个人参考图像未附带，无法保证第三方输入会得到相同像素或相同耗时.
-
-## 确认与限制
-
-- 控制台 `[H3 v2]` 中会显示 FC1 50 层，Gate 50 层，runtime weight conversion 0s.
-- 通过 `verbose=True` 确认 `H3 v2 sparse producer`. 如果 CUDA/BF16/head_dim 或 token 数，sigma 范围不匹配，会回退到 ComfyUI 现有的 dense 路径. 仅跑完流程并不能证明使用了 VSA.
-- prefix 始终是 exact KV / dense-query sink. 未生效的 `sink_conditioning` 以及未采用的 padding 行省略等切换开关不予公开.
-- 如果更改了原始 Diffusion 模型或 Gate，请重新创建缓存. 与额外 LoRA 或模型编辑的组合尚未验证.
-- runtime 执行快速的 header/大小/shape/metadata 检查，不会每次都对所有文件计算 SHA-256. 在 `--verify` 中加上 `--model` / `--gate` 还可以校验原始权重的全部内容. 不依赖 mtime，用户名或绝对路径.
-- 遇到 `ModuleNotFoundError` / API 缺失时，请先准备其他兼容环境再重新确认. 仅仅放入本发布物并不会让旧版 ComfyUI 变得兼容.
-- 出现 `ModelMMAP` 访问错误时，请检查原始模型和缓存的读取权限与共享状态. 本工具不会修改权限或终止其他进程.
-
-性能与验证范围请参阅 [VALIDATION.md](VALIDATION.md). 视频的主观画质，角色还原度和音频质量未做评估.
-源代码采用 [GPL-3.0](LICENSE)，来源与修改点见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). 权重适用各自发布方的许可证.
-
-## 文档索引
-
-| 主题 | 文档 |
-|---|---|
-| 优化规划与架构完善 | [docs/OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md) |
-| 总体架构图（SVG） | [docs/architecture.svg](docs/architecture.svg) |
-| 主 Agent 流程与智能路由（SVG） | [docs/agent-flow.svg](docs/agent-flow.svg) |
-| 模块图标集（SVG symbol） | [docs/icons.svg](docs/icons.svg) |
-| 数字资产流水线（学习视频） | [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) · [Skill](skills/learning-video/SKILL.md) |
-| 控制台（主 Agent / 一键出片 / 数字资产 / 系统监控 / 设置） | [apps/console](apps/console) · [apps/web](apps/web) |
-| 部署（ComfyUI / GB10 / Docker） | [DEPLOYMENT.zh.md](DEPLOYMENT.zh.md) |
-| 009jev native SLA（推荐） | [009JEV.md](009JEV.md) |
-| Laya 本地决策引擎（默认） | [LAYA.md](LAYA.md) |
-| OpenJev 本地决策引擎 | [OPENJEV.md](OPENJEV.md) |
-| Jev Adaptive VSA（旧 W4A4 路径） | [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md) |
-| 验证记录 | [VALIDATION.md](VALIDATION.md) |
-| 第三方来源 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
-
----
-
-# English Documentation
-
-**Xpark Media Foundry Agent (`Xpark-Media-Foundry-Agent`)** is a video digital-asset pipeline: it forges documents and image sets into 1080p animated explainer video assets through ingest → storyboard → per-clip generation → QC → ffmpeg concat. The generation layer combines MiniMax-H3 with two acceleration paths, 009jev native SLA and W4A4+VSA, while the decision engines Laya (local) / OpenJev (llama.cpp) / Jev (remote API) allocate per-layer attention keep rates to cut compute and VRAM.
-
-## The Digital-Asset Pipeline
-
-```
-source assets (docx / image set)
-  │ 1. ingest     extract word/media + paragraph structure, pick figures by chapter
-  ▼
-storyboard (narration + motion script per figure)
-  │ 2. scripting  1080p template, per-clip seeds, sequential reveal motion
-  ▼
-clip generation (H3 + 009jev/laya decision acceleration)
-  │ 3. batch      learning_video_1080p.api.json · gen_learning_video.py
-  ▼
-clip assets (5 s · 1920×1080 · 24fps · Chinese narration)
-  │ 4. QC / post  frame sampling + ffprobe + dewatermark + ffmpeg concat
-  ▼
-final cut (digital asset)
-```
-
-| Stage | Carrier | Artifact |
-|---|---|---|
-| 1. Ingest | docx `word/media/` (`unzip`/`zipfile`), paragraph structure | image set (6–10 figures) |
-| 2. Scripting | per-figure `narration` (≤45 chars) + `motion script`, `PROMPT_TMPL` | storyboard `CLIPS` |
-| 3. Per-clip generation | [learning_video_1080p.api.json](examples/learning_video_1080p.api.json), [gen_learning_video.py](skills/learning-video/scripts/gen_learning_video.py) | 5 s 1080p animated clip |
-| 4. QC | head/mid/tail frame sampling, `ffprobe` | clips that pass QC |
-| 5. Post / delivery | `dewatermark.sh` (optional), `concat_learn.sh` | final mp4 (1920×1080 · CRF 18) |
-
-See [docs/LEARNING_VIDEO.md](docs/LEARNING_VIDEO.md) and the [learning-video skill](skills/learning-video/SKILL.md) for the full walkthrough.
-
-### Pipeline generation engines
-
-| Path | Node | Notes | Doc |
-|---|---|---|---|
-| **009jev native SLA (recommended)** | `H3JevNativeSLAPatch` | plain model + native SLA, no W4A4 conversion, per-layer dynamic keep | [009JEV.en.md](009JEV.en.md) |
-| W4A4 + Streaming VSA | `H3V2PreconvertedLoader` / `H3V2StreamingVSAPatch` | FC1 W4A4 preconversion + fixed/adaptive VSA | [JEV_ADAPTIVE.en.md](JEV_ADAPTIVE.en.md) |
-
-Decision engine, one of three, identical contract and hot-swappable via `H3_DECISION_ENGINE`:
-
-| Engine | Deployment | Notes | Doc |
-|---|---|---|---|
-| Laya (default) | in-process local model | 322M local decision model, offline & free | [LAYA.md](LAYA.md) |
-| OpenJev | local llama-server | GGUF generative decisions, one Q&A at a time | [OPENJEV.md](OPENJEV.md) |
-| Jev | remote TypeSafe API | requires `TYPESAFE_API_KEY` | [JEV_ADAPTIVE.en.md](JEV_ADAPTIVE.en.md) |
-
-Measured on GB10, 5-second 4-step video, warm cache:
-
-| Engine | Time | vs baseline | SSIM vs baseline |
-|---|---:|---:|---:|
-| baseline | 530.2s | — | 1.0 |
-| Laya | 340.1s | −35.9% | 0.761 |
-| OpenJev | 400.1s | −24.5% | 0.760 |
-
----
-
-## Engine detail: W4A4 + Streaming VSA
-
-The sections below cover installation, one-time conversion, workflows and validation for the FC1 W4A4 + Streaming VSA path. Accelerates MiniMax H3 Ref2VA on GB10 DGX Spark using FC1 W4A4 + Streaming VSA, validated through full generation at 832×1408 / 124 frames / 4 steps.
-Combines **FC1 Plain ConvRot W4A4, preconverted INT8 Gate, and fixed padding decision cache**.
-Weight conversion is executed once offline; during generation, weights are loaded from CPU using ComfyUI's Dynamic VRAM / offload path.
-
-**Installation and one-time conversion use ComfyUI's own Python to run `convert.py`; setup and full generation verified on ComfyUI v0.36.0.** With a compatible ComfyUI installation and the required models available, it handles compatibility checks and preconversion. Model weights are never downloaded automatically.
-
-### Installation at a glance
-
-| Item | Summary |
-|---|---|
-| Additional SSD space | **About 5.79 GB (5.39 GiB)** for the converted cache. Source models, text encoder, VAEs, and generated videos require separate space. |
-| Reusing a cache | Pass `-CacheSource`. Same-volume hard links consume almost no additional space for the cache; another volume requires a copy. |
-| Nodes added by this repository | **Two**: `H3V2PreconvertedLoader` and `H3V2StreamingVSAPatch`. |
-| External node dependencies | **Two packages**, KJNodes and MotionCache-FastVAE. `-InstallDependencies` installs only missing packages. These packages also contain nodes unrelated to this workflow. |
-
-### Measured results on ComfyUI v0.36.0
-
-One run on 2026-09-20, GB10 DGX Spark: 1024×1792, 124 frames, 24 fps, 4 steps, seed 43, res_multistep/simple, Sigma Shift 12/3, ChunkFFN 4, VSA keep 5%, and FastVAE batch 2.
-
-| Metric | Measured result |
-|---|---:|
-| Generation time, including model loading | **209.233 seconds (about 3 min 29 sec)** |
-| Maximum observed GPU memory usage | **11,479 MiB** |
-| Process RAM peak (peak RSS) | **11,610.7 MiB** |
-| Output validation | Audio present, 124 frames, 24 fps, full FFmpeg decode passed |
-| Interruptions / retries | None |
-
-GPU usage was sampled every 60 seconds and on completion; it is not an instantaneous peak. This is a single compatibility run, not a speed comparison or quality assessment. A fully SHA-256-verified existing cache was reused, so fresh 50-block conversion and fresh dependency installation were not exercised in this run. See [VALIDATION.md](VALIDATION.md) for details.
-
-This directory can be distributed directly as the root of a GitHub repository.
-No external benchmark folders, references to older releases, experimental/discarded designs, or profiling code are required for execution.
-Model weights, converted caches, reference images, and generated output videos are not included.
-
-## 1. Overview / What This Project Does
-
-- `H3V2PreconvertedLoader`: Overlays 50 FC1 W4A4 shards onto the original INT8 diffusion model state_dict in CPU memory to build a standard ComfyUI ModelPatcher. Outputs `MODEL` and `cache` connection.
-- `H3V2StreamingVSAPatch`: Retains the preconverted INT8 Gate in CPU memory and streams only the current block's Gate to GPU. Evaluates per-plan padding decisions once on CPU.
-- `convert.py`: Converts existing INT8 ConvRot FC1 → native ConvRot BF16 recovery → Plain W4A4. Simultaneously preconverts and saves the INT8 Gate.
-- GUI / API workflows: Identical node layout, parameter settings, and reference order. The GUI version can be dragged & dropped directly into ComfyUI.
-
-FC2 remains INT8. QKV, Attention kernel, Gate INT8 arithmetic, ChunkFFN, FastVAE, and sampler / scheduler are unchanged. SVDQuant is not used.
-Standard ComfyUI classes and existing custom nodes are not globally monkey-patched. Unique node IDs prevent collisions with previous versions. Do not apply both legacy VSA and v2 VSA to the same MODEL simultaneously.
-
-## 2. Tested Environment
-
-On 2026-09-20, setup and a complete 1024×1792 generation passed with **ComfyUI 0.36.0, Python 3.13.13, PyTorch 2.14.0+cu130, comfy-kitchen 0.2.34, and comfy-aimdo 0.5.5**. The single GB10 DGX Spark run took 209.233 seconds including model loading. See [VALIDATION.md](VALIDATION.md) for conditions and measurement limits. The original validation environment follows:
-
-- **OS**: DGX OS (Linux, aarch64)
-- **GPU**: GB10 DGX Spark
-- **Python**: 3.13.14
-- **PyTorch**: 2.13.0+cu130
-- **comfy-kitchen**: 0.2.33
-- **comfy-aimdo**: 0.5.2
-- **ComfyUI commit**: `15eb748b3ec5f8a0a2d470b7fb280e2d7579f916`
-- Exact file fingerprints are recorded in [compatibility.json](compatibility.json).
-- A matching version string alone does not guarantee GPU binary compatibility; run `--check` before conversion.
-
-## 3. Requirements & Dependencies
-
-Required APIs:
-
-- **ComfyUI**: `comfy.quant_ops.QUANT_ALGOS['convrot_w4a4']`, native quantized state_dict loader, `comfy_extras.nodes_sparse_attention`.
-- **comfy-kitchen**: `TensorCoreConvRotW4A4Layout`, CUDA `cutlass_int4_dequant`, `sol_attn_chunked`, `int8_linear`.
-  - In this tested kitchen build, the native ConvRot INT4 execution path depends on the architecture; unsupported modes are rejected. **Measured target is GB10 DGX Spark only**. Other GPUs must verify via `--check` and actual generation.
-- **External Custom Nodes** (required by workflows):
-  - [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes): `MiniMaxChunkFeedForward`.
-  - [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE): `MiniMaxH3FastVAEDecode`.
-- `torch` and `safetensors` must come from the same Python environment used by ComfyUI.
-
-Installation and one-time conversion on **DGX OS / Linux** use ComfyUI's own Python to run `convert.py` (see "One-Time Conversion Procedure" below). The tool never updates ComfyUI, PyTorch, or comfy-kitchen, and never downloads model weights. Missing runtime APIs cause a clear failure.
-
-Restart ComfyUI when setup finishes. Open the bundled GUI workflow, select your reference images, and adjust loader model names if your weights are in subdirectories.
-
-## 4. Required Models and Download Sources
-
-File names matching the bundled workflows. The Gate is not applied as a standard LoRA.
-
-| Role | File | ComfyUI Directory / Source |
-|---|---|---|
-| Diffusion | `minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors` | `models/diffusion_models/` · [MATLOWAI](https://huggingface.co/MATLOWAI/minimax-h3-fused-turbo-int8-convrot) |
-| VSA Gate | `fasth3_vsa_gate.safetensors` | Specified via path during conversion · [barelymining](https://huggingface.co/barelymining/ComfyUI-MiniMax-H3-FastVideo) |
-| Text encoder | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `models/text_encoders/` · [Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
-| Video VAE | `minimax_h3_video_vae_int8_convrot.safetensors` | `models/vae/` · [Kijai](https://huggingface.co/Kijai/MiniMax-H3-experimental) |
-| Audio VAE | `minimax_h3_audio_vae_fp32.safetensors` | `models/vae/` · [Comfy-Org](https://huggingface.co/Comfy-Org/MiniMax-H3) |
-
-No BF16/FP16 base model is required. The conversion script specifically targets the 50 layers, shapes, and keys of the INT8 ConvRot model above; differing architectures will be rejected.
-The original diffusion model is still required during inference to read non-FC1 weights. The converted cache cannot run on its own.
-No additional Turbo/FastH3 LoRAs are used in the bundled workflows.
-
-## 5. Simple 4-Step Quick Start
-
-Follow these 4 steps to get up and running:
-
-1. **Place this repository in custom_nodes**
-   - Place this repository under `ComfyUI/custom_nodes/Xpark-Media-Foundry-Agent/`.
-   - Ensure external nodes [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) and [ComfyUI-MiniMax-H3-MotionCache-FastVAE](https://github.com/Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE) are installed.
-2. **Make required models available**
-   - Place diffusion, text encoder, and VAE weights into their corresponding `ComfyUI/models/` subdirectories as listed in the table above.
-   - Place `fasth3_vsa_gate.safetensors` in an accessible path (e.g., `ComfyUI/models/loras/fasth3_vsa_gate.safetensors`).
-3. **Run convert.py**
-   - Run `convert.py` with ComfyUI's isolated Python to check native INT4 compatibility and generate or verify `h3_preconverted/fc1_gate`. Install any missing external node packages manually. Existing models are reused.
-4. **Open workflow and generate**
-   - Start ComfyUI (recommended: `--disable-comfy-compiler`) and drag & drop [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json).
-   - In the 3 `LoadImage` nodes, select your reference images (Full-body, Upper-body, Face close-up).
-   - Verify that the loader's `cache_directory` points to `h3_preconverted/fc1_gate` and click **Queue Prompt**.
-
-## 6. One-Time Conversion Procedure
-
-**`convert.py` performs these checks and conversion.** Run it with **ComfyUI's own Python environment**. The example below targets DGX OS / Linux:
-
-```bash
-H3_PYTHON=/path/to/ComfyUI/venv/bin/python
-H3_ROOT=/path/to/ComfyUI
-H3_CONVERT="$H3_ROOT/custom_nodes/Xpark-Media-Foundry-Agent/convert.py"
-
-# 1. Smoke check native INT4 / CPU offload / GPU reload (takes seconds, writes no files)
-"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" --check --gpu 0
-
-# 2. Convert all 50 layers. Output directory must be a new, non-existing path.
-"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" \
-  --comfy-root "$H3_ROOT" \
-  --model "$H3_ROOT/models/diffusion_models/minimax_h3_fused_refdelta_r1024_turbo8_mystic07_int8_convrot.safetensors" \
-  --gate "$H3_ROOT/models/loras/fasth3_vsa_gate.safetensors" \
-  --output "$H3_ROOT/models/h3_preconverted/fc1_gate" --gpu 0
-
-# 3. Verify SHA-256 integrity of all cache shards (useful after copying or suspected corruption)
-"$H3_PYTHON" -B -X utf8 "$H3_CONVERT" --comfy-root "$H3_ROOT" \
-  --verify "$H3_ROOT/models/h3_preconverted/fc1_gate"
-```
-
-- `--gpu` selects the CUDA device exclusively for the conversion process. It does not affect ComfyUI's general settings.
-- Point `H3_PYTHON` at the Python interpreter used by ComfyUI.
-- Required additional disk space is approximately **5.8 GB** (FC1 ~3.86 GB + Gate ~1.93 GB). Memory requirement: because the full model, text encoder, and VAEs are utilized, enough unified memory is needed to hold all weights. GB10 DGX Spark's unified memory satisfies this, with ~16GiB staging during runtime.
-- Layers are converted and roundtrip-verified one by one; all 50 layers are never resident in GPU memory simultaneously.
-- Successful completion outputs `COMPLETE: FC1 50/50 + Gate 50/50` and writes `manifest.json`. Existing output directories are never overwritten or deleted. If conversion fails partway, the partial directory is left intact; resolve the issue and specify a new directory.
-
-## 7. Workflow Usage
-
-### Changing sparsity
-
-Change **`keep_percent` in the “H3 v2 Streaming VSA (Preconverted Gate)” node**. This is the percentage retained by sparse attention, not the percentage removed.
-
-| `keep_percent` | Retained | Approximate reduction in the sparse region |
-|---:|---:|---:|
-| 5 (default) | 5% | 95% |
-| 10 | 10% | 90% |
-| 20 | 20% | 80% |
-
-Lower values are sparser. The accepted range is 0.1–100. Protected prefix regions, including text and references, are handled separately; these percentages do not describe the reduction in total model computation. **No weight reconversion is needed.** Change the value and generate again.
-
-- **GUI Workflow**: [workflows/H3_Streaming_v2.json](workflows/H3_Streaming_v2.json)
-- **API Workflow**: [workflows/H3_Streaming_v2.api.json](workflows/H3_Streaming_v2.api.json)
-
-1. Restart ComfyUI, load the GUI workflow, and swap Reference 1 / 2 / 3 with your own images (full-body, upper-body, face, in that order).
-2. `cache_directory=h3_preconverted/fc1_gate` is **relative to `ComfyUI/models`** (absolute paths are also supported).
-3. Connect the Loader's `cache` output to the VSA node's `cache` input. Manage model names, caches, and workflows as a unified set.
-4. Recommended launch flag is `--disable-comfy-compiler`. The benchmark environment also used `--disable-pinned-memory`. Even under this option, the node explicitly attempts to pin Gate memory (falling back to standard CPU tensors if pinning fails).
-5. Default parameters: **832×1408, 124 frames, 24 fps, seed 43, 4 steps, res_multistep / simple, Sigma Shift 12/3, ChunkFFN 4, VSA keep 5%, FastVAE batch 2**.
-6. Output videos are saved to ComfyUI's default output directory: `output/H3_Streaming_v2_*.mp4`.
-7. For the API workflow, submit `{"prompt": <API JSON>, "client_id": "..."}` to ComfyUI's standard `/prompt` endpoint. Images must be placed in `ComfyUI/input` with matching filenames in LoadImage nodes. Sample workflows use generic prompts; user inputs will produce distinct pixels and timings.
-
-## 8. Validation / Benchmark Results
-
-From [VALIDATION.md](VALIDATION.md), measured on GB10 DGX Spark:
-
-### Benchmark Metrics (832×1408 / 124 frames / 4 steps)
-
-| Metric | Result |
-|---|---:|
-| Resolution / Frames / FPS | 832×1408 / 124 / 24 |
-| Steps / Seed | 4 / 43 |
-| FC1 Layers Applied | 50/50 layers |
-| FC1 Native INT4 Calls | 800 (16 per layer, all succeeded) |
-| FC1 Backing Data / Scale | CPU resident, Dynamic VRAM active |
-| Runtime FC1 / Gate Weight Conversion | 0s |
-| FC1 Shard Load | 0.0197s |
-| Manifest Check + Model Build & Load | 0.1875s |
-| Gate CPU Load / Pin | 1.221s |
-| Sampler Wall-Clock Time | 99.858s |
-| Step Times (1 / 2 / 3 / 4) | 32.067s / 22.496s / 22.601s / 22.673s |
-| Steady Step Time (avg steps 2–4) | **22.590s/step** |
-| Progress Bar Corrected Display | 90s |
-| **Prompt Total (End-to-End)** | **149.704s** *(approx. 2m 30s)* |
-| FastVAE Decode (batch 2) | 24.90s |
-| Model Staged CPU | 16,320 MiB |
-| Video / Audio Latents | Exact finite match with FC1 Preconverted reference |
-| Output Media | 832×1408, 124 frames with audio, FFmpeg decoded fully |
-
-### Comparison Across Approaches (Prompt Total)
-
-- **This Configuration (v2 Preconverted FC1 W4A4 + Streaming VSA)**: **149.70s** *(Candidate eval: 146.26s)*
-- **Baseline INT8**: **168.44s** *(v2 is ~19s / 11% faster)*
-- **Runtime-Convert FC1 W4A4**: **213.28s** *(v2 is ~64s / 30% faster due to elimination of runtime quantization overhead)*
-
-*Note: Measurements are single-run values influenced by OS file cache, load order, and measurement overhead. Small variations should not be interpreted as guaranteed improvements or regressions. Do not compare the progress bar display time (90s) directly with wall-clock time (99.858s).*
-
-## 9. Limitations / Compatibility Notes
-
-- The console displays `[H3 v2]` confirming 50 FC1 layers, 50 Gate layers, and runtime weight conversion of 0s.
-- `verbose=True` confirms `H3 v2 sparse producer`. If CUDA, BF16, head_dim, token count, or sigma ranges are incompatible, ComfyUI falls back to the existing dense path. A completed run alone does not prove VSA activation.
-- Prefix tokens are permanently exact KV / dense-query sinks. Experimental switches such as alternate `sink_conditioning` or omitted padding rows are not included.
-- If the base diffusion model or Gate is modified, create a new cache. Combinations with additional LoRAs or model edits are unverified.
-- Runtime uses fast header/size/shape/metadata verification and does not compute SHA-256 for all files on every load. Passing `--model` / `--gate` to `--verify` allows full source hash verification. It does not depend on file modification times, usernames, or absolute paths.
-- `ModuleNotFoundError` or missing APIs must be addressed by using a compatible environment; this custom node does not monkey-patch older ComfyUI versions.
-- If `ModelMMAP` access errors occur, verify read permissions and sharing state of base models and caches. This tool does not alter permissions or terminate third-party processes.
-- Subjective visual quality, character fidelity, and audio quality are not evaluated.
-
-## 10. License / Third-Party Notices
-
-- Distributed source code is licensed under [GPL-3.0](LICENSE).
-- Upstream origins and modifications are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- Model weights remain subject to their respective upstream licenses, including applicable MiniMax H3 terms. This repository does not distribute or grant redistribution rights for model weights.
-
-
-## 实验：Jev Adaptive VSA
-
-在保留固定 keep 率的现有节点的同时，新增了实验节点，可在每个 step 通过 Choice 选择下一步的 keep 率. 使用方法，通信上限，fallback，支持的 sampler 请参阅 [JEV_ADAPTIVE.md](JEV_ADAPTIVE.md).
